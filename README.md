@@ -2,7 +2,7 @@
 
 Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/mining engine, and desktop dashboard.
 
-## Setup
+## Developer Setup
 
 - Node 18+
 - pnpm (or enable with `corepack enable`)
@@ -29,7 +29,7 @@ data/
     types.json                 ← optional (only if you run strip-types yourself)
     solarsystems.json          ← optional (only if you run strip-solarsystems yourself)
   stripped/
-    types.json                 ← required (from partner or from pnpm strip-types)
+    types.json                 ← required (from from pnpm strip-types)
     solarsystems.json          ← optional (from pnpm strip-solarsystems; enables star system live search)
 ```
 
@@ -54,7 +54,7 @@ Without these files, the Builder tab will show a "Types loaded but empty" or "Fi
 
 ## Safe Overlay Philosophy
 
-This app does not automate gameplay, read process memory, or inject into the game. Overlay works with mock data and manual interaction only.
+This app does not automate gameplay, read process memory, or inject into the game.
 
 ## License
 
