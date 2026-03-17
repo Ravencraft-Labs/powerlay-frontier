@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+node_modules.zip
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Raw game data (large; keep local)
+data/
+
+# Cursor / IDE
+.cursorrules
+.cursor/
+
+# Debug logs
+debug-*.log
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Electron
+out/
+release/
+
+# Root shell scripts
+/*.sh
