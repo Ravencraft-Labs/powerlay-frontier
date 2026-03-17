@@ -2,6 +2,8 @@
 
 Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/mining engine, and desktop dashboard.
 
+**Community tool — not affiliated with CCP Games.** All game-related names, images, and assets are trademarks and/or copyrights of CCP hf.
+
 ## Developer Setup
 
 - Node 18+
