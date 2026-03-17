@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.5] - 2025-03-11
+
+### Added
+
+- Lock and close buttons on all overlay frames (when unlocked)
+- Mining play/pause button on Build overlay when unlocked, synced with desktop mining frame
+
+### Changed
+
+- New builds default to "Build #1", "Build #2", etc. (next number not used by existing default-named builds)
+- Locked overlays hide all interactive buttons (lock, close, play/pause, status dropdowns) to avoid confusion
+- Build overlay shows "Tracking"/"Paused" label even when locked (play/pause button hidden when locked)
+
+### Fixed
+
+- Overlay window now exactly matches visible content size; invisible area no longer blocks game clicks; resizing disabled
+
+---
+
 ## [0.1.4] - 2025-03-11
 
 ### Added

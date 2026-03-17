@@ -3,6 +3,22 @@ import type { BuilderOverlayState } from "./preload.d";
 import { OverlayFrame } from "./components/OverlayFrame";
 import { useEfOverlay } from "./hooks/useEfOverlay";
 
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+function PauseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+    </svg>
+  );
+}
+
 function formatProductionTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0s";
   const s = Math.floor(seconds % 60);
@@ -23,6 +39,7 @@ function formatCompact(n: number): string {
 export function BuildTrackingOverlay() {
   const api = useEfOverlay();
   const [state, setState] = useState<BuilderOverlayState>({});
+  const [trackingActive, setTrackingActive] = useState(false);
 
   const load = useCallback(async () => {
     const getState = api?.overlay?.getBuilderState;
@@ -43,6 +60,31 @@ export function BuildTrackingOverlay() {
     const id = setInterval(load, 500);
     return () => clearInterval(id);
   }, [load]);
+
+  const loadMiningErrors = useCallback(async () => {
+    const getErrors = api?.mining?.getErrors;
+    if (!getErrors) return;
+    try {
+      const err = await getErrors();
+      setTrackingActive(err?.trackingActive ?? false);
+    } catch {
+      /* ignore */
+    }
+  }, [api?.mining?.getErrors]);
+
+  useEffect(() => {
+    loadMiningErrors();
+    const id = setInterval(loadMiningErrors, 500);
+    return () => clearInterval(id);
+  }, [loadMiningErrors]);
+
+  const handlePlayPause = useCallback(() => {
+    if (trackingActive) {
+      api?.mining?.stopTracking?.();
+    } else {
+      api?.mining?.startTracking?.();
+    }
+  }, [trackingActive, api?.mining]);
 
   const buildName = state.buildName ?? "—";
   const mined = state.mined ?? 0;
@@ -78,7 +120,27 @@ export function BuildTrackingOverlay() {
 
   return (
     <OverlayFrame title={`Build: ${buildName}`}>
+      {(locked) => (
       <div className="text-[0.8rem] text-muted space-y-1.5">
+        <div className="flex items-center gap-2 mb-1">
+          {!locked && (
+            <button
+              type="button"
+              className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors overlay-no-drag ${
+                trackingActive
+                  ? "text-amber-500 hover:bg-amber-500/20"
+                  : "text-green-500 hover:bg-green-500/20"
+              }`}
+              title={trackingActive ? "Stop tracking" : "Start tracking"}
+              onClick={handlePlayPause}
+            >
+              {trackingActive ? <PauseIcon /> : <PlayIcon />}
+            </button>
+          )}
+          <span className="text-[0.75rem] text-muted">
+            {trackingActive ? "Tracking" : "Paused"}
+          </span>
+        </div>
         {totalOre > 0 && (
           <div>
             Mining: {miningPct}% ({formatCompact(mined)} / {formatCompact(totalOre)} m³)
@@ -125,6 +187,7 @@ export function BuildTrackingOverlay() {
           <div className="italic">Select a build and add items in the desktop app.</div>
         )}
       </div>
+      )}
     </OverlayFrame>
   );
 }

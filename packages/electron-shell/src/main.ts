@@ -152,14 +152,15 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   if (w && !w.isDestroyed()) return w;
   const savedBounds = loadOverlayBounds()[frame];
   const opts: Electron.BrowserWindowConstructorOptions = {
-    width: savedBounds?.width ?? 320,
-    height: savedBounds?.height ?? 400,
+    width: 320,
+    height: 300,
     x: savedBounds?.x,
     y: savedBounds?.y,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: true,
+    resizable: false,
+    useContentSize: true,
     skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -182,7 +183,6 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
     }, 300);
   };
   w.on("move", scheduleSave);
-  w.on("resize", scheduleSave);
   w.on("close", () => {
     if (w && !w.isDestroyed()) {
       const b = w.getBounds();
@@ -315,6 +315,13 @@ ipcMain.on("overlay:set-builder-state", (_event, state: BuilderOverlayState) => 
 
 ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame) => {
   return overlayLockState[frame] ?? false;
+});
+
+ipcMain.on("overlay:set-content-size", (_event, frame: OverlayFrame, width: number, height: number) => {
+  const w = overlayWindows[frame];
+  if (w && !w.isDestroyed() && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    w.setContentSize(Math.round(width), Math.round(height));
+  }
 });
 
 ipcMain.handle("overlay:toggle-lock", (_event, frame: OverlayFrame) => {

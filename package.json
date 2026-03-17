@@ -1,6 +1,6 @@
 {
   "name": "powerlay",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "main": "packages/electron-shell/dist/main.js",
   "scripts": {

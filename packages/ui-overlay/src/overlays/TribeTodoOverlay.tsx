@@ -4,6 +4,10 @@ import { sortTodosByPriority } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
 
+function statusLabel(s: TodoStatus): string {
+  return s === "in-progress" ? "In progress" : s === "done" ? "Done" : "Open";
+}
+
 export function TribeTodoOverlay() {
   const api = useEfOverlay();
   const [todos, setTodos] = useState<TribeTodo[]>([]);
@@ -59,6 +63,7 @@ export function TribeTodoOverlay() {
         </>
       }
     >
+      {(locked) => (
       <ul className="list-none p-0 m-0">
         {openTodos.length === 0 ? (
           <li className="flex items-center gap-2 py-1.5 text-muted italic text-[0.8rem]">
@@ -80,19 +85,24 @@ export function TribeTodoOverlay() {
                   </span>
                 )}
               </div>
-              <select
-                value={t.status}
-                onChange={(e) => handleStatusChange(t.id, e.target.value as TodoStatus)}
-                className="py-0.5 px-1.5 text-[0.7rem] rounded border border-border-input bg-bg text-text cursor-pointer"
-              >
-                <option value="open">Open</option>
-                <option value="in-progress">In progress</option>
-                <option value="done">Done</option>
-              </select>
+              {locked ? (
+                <span className="text-[0.7rem] text-muted shrink-0">{statusLabel(t.status)}</span>
+              ) : (
+                <select
+                  value={t.status}
+                  onChange={(e) => handleStatusChange(t.id, e.target.value as TodoStatus)}
+                  className="py-0.5 px-1.5 text-[0.7rem] rounded border border-border-input bg-bg text-text cursor-pointer overlay-no-drag"
+                >
+                  <option value="open">Open</option>
+                  <option value="in-progress">In progress</option>
+                  <option value="done">Done</option>
+                </select>
+              )}
             </li>
           ))
         )}
       </ul>
+      )}
     </OverlayFrame>
   );
 }

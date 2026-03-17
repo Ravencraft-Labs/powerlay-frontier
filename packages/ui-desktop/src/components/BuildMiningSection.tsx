@@ -155,10 +155,24 @@ async function removeBuild(id: string): Promise<boolean> {
   return true;
 }
 
-function createNewBuild(): BuildPlan {
+/** Returns the next available "Build #N" number not used by existing builds. */
+function getNextBuildNumber(builds: BuildPlan[]): number {
+  const used = new Set<number>();
+  const match = /^Build #(\d+)$/i;
+  for (const b of builds) {
+    const m = b.name?.trim().match(match);
+    if (m) used.add(parseInt(m[1], 10));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return n;
+}
+
+function createNewBuild(builds: BuildPlan[]): BuildPlan {
+  const n = getNextBuildNumber(builds);
   return {
     id: `build-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    name: "ORT-411",
+    name: `Build #${n}`,
     facilities: [],
     plannedItems: [],
     lasers: [],
@@ -310,7 +324,7 @@ export function BuildMiningSection() {
   }, []);
 
   const handleAddBuild = async () => {
-    const plan = createNewBuild();
+    const plan = createNewBuild(builds);
     const saved = await saveBuild(plan);
     const list = await listBuilds();
     setBuilds(list);

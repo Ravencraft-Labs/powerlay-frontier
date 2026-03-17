@@ -36,6 +36,8 @@ export function OverlayWithLock({ frame, btnCls }: OverlayWithLockProps) {
   useEffect(() => {
     if (!window.efOverlay?.overlay?.getLockState) return;
     loadLockState();
+    const id = setInterval(loadLockState, 500);
+    return () => clearInterval(id);
   }, [loadLockState]);
 
   const handleToggleOverlay = () => {

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
     delete: (id: string) => ipcRenderer.invoke("builds:delete", id),
   },
   overlay: {
+    setContentSize: (frame: "todo" | "builder", width: number, height: number) =>
+      ipcRenderer.send("overlay:set-content-size", frame, width, height),
     toggle: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:toggle", frame),
     show: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:show", frame),
     hide: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:hide", frame),
