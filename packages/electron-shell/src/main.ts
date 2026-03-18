@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, Tray } from "electron";
 import path from "path";
 import fs from "fs";
 import { registerTodoHandlers } from "./ipc/todoHandlers.js";
@@ -13,12 +13,16 @@ import { getAppLogDir } from "./log/appLogger.js";
 import { checkLogDir, expandPath } from "./log/fileTailer.js";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 
 type OverlayFrame = "todo" | "builder";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
 const overlayLockState: Record<OverlayFrame, boolean> = { todo: false, builder: false };
+const builderOverlayWindows = new Map<string, BrowserWindow>();
+const overlayLockStateByBuild: Record<string, boolean> = {};
 
 const OVERLAY_BOUNDS_FILE = "overlay-bounds.json";
+const BUILDER_OVERLAY_GAP = 16;
 
 interface OverlayBounds {
   x: number;
@@ -65,6 +69,29 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
   }
 }
 
+function loadBuilderOverlayBounds(buildId: string): OverlayBounds | undefined {
+  try {
+    const p = getOverlayBoundsPath();
+    if (!fs.existsSync(p)) return undefined;
+    const raw = fs.readFileSync(p, "utf-8");
+    const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
+    const key = `builder-${buildId}`;
+    const b = data[key];
+    if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y) || !Number.isFinite(b.width) || !Number.isFinite(b.height)) return undefined;
+    try {
+      const display = screen.getDisplayMatching({ x: b.x!, y: b.y!, width: b.width!, height: b.height! });
+      const workArea = display.workArea;
+      const x = Math.max(workArea.x, Math.min(b.x!, workArea.x + workArea.width - Math.min(b.width!, workArea.width)));
+      const y = Math.max(workArea.y, Math.min(b.y!, workArea.y + workArea.height - Math.min(b.height!, workArea.height)));
+      return { x, y, width: b.width!, height: b.height! };
+    } catch {
+      return { x: b.x!, y: b.y!, width: b.width!, height: b.height! };
+    }
+  } catch {
+    return undefined;
+  }
+}
+
 function saveOverlayBounds(bounds: Partial<Record<OverlayFrame, OverlayBounds>>): void {
   try {
     const p = getOverlayBoundsPath();
@@ -75,6 +102,21 @@ function saveOverlayBounds(bounds: Partial<Record<OverlayFrame, OverlayBounds>>)
     }
     const merged = { ...existing, ...bounds };
     fs.writeFileSync(p, JSON.stringify(merged, null, 0), "utf-8");
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveBuilderOverlayBounds(buildId: string, bounds: OverlayBounds): void {
+  try {
+    const p = getOverlayBoundsPath();
+    let existing: Partial<Record<string, OverlayBounds>> = {};
+    if (fs.existsSync(p)) {
+      const raw = fs.readFileSync(p, "utf-8");
+      existing = JSON.parse(raw) as Record<string, OverlayBounds>;
+    }
+    existing[`builder-${buildId}`] = bounds;
+    fs.writeFileSync(p, JSON.stringify(existing, null, 0), "utf-8");
   } catch {
     /* ignore */
   }
@@ -100,8 +142,9 @@ interface BuilderOverlayState {
   totalOre?: number;
   productionLeftSeconds?: number;
   miningOres?: MiningOreItem[];
+  plannedVolByTypeId?: Record<number, number>;
 }
-let builderOverlayState: BuilderOverlayState = {};
+let builderOverlayStateByBuild: Record<string, BuilderOverlayState> = {};
 
 function getDesktopUrl(): string {
   const url = process.env.DESKTOP_URL;
@@ -121,10 +164,21 @@ function getOverlayBaseUrl(): string {
   return "http://localhost:5174";
 }
 
+function getIconPath(): string | undefined {
+  if (app.isPackaged) {
+    const p = path.join(process.resourcesPath, "icon.png");
+    return fs.existsSync(p) ? p : undefined;
+  }
+  const iconPath = path.join(__dirname, "..", "..", "..", "build", "icon.png");
+  return fs.existsSync(iconPath) ? iconPath : undefined;
+}
+
 function createMainWindow(): void {
+  const iconPath = getIconPath();
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    ...(iconPath && { icon: iconPath }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -138,10 +192,19 @@ function createMainWindow(): void {
   } else {
     mainWindow.loadFile(desktopUrl);
   }
+  mainWindow.on("close", (e) => {
+    if (tray) {
+      e.preventDefault();
+      mainWindow?.hide();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
     for (const frame of Object.keys(overlayWindows) as OverlayFrame[]) {
       const w = overlayWindows[frame];
+      if (w && !w.isDestroyed()) w.close();
+    }
+    for (const w of builderOverlayWindows.values()) {
       if (w && !w.isDestroyed()) w.close();
     }
   });
@@ -206,6 +269,101 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
     w.loadURL(`${base}${sep}frame=${frame}`);
   } else {
     w.loadFile(base, { query: { frame } });
+  }
+  return w;
+}
+
+function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
+  let w = builderOverlayWindows.get(buildId);
+  if (w && !w.isDestroyed()) return w;
+
+  const savedBounds = loadBuilderOverlayBounds(buildId);
+  let x: number | undefined = savedBounds?.x;
+  let y: number | undefined = savedBounds?.y;
+
+  if (x == null || y == null) {
+    const allBuilderWindows = Array.from(builderOverlayWindows.values()).filter((win) => !win.isDestroyed());
+    const defaultWidth = 320;
+    const defaultHeight = 300;
+    const workArea = screen.getPrimaryDisplay().workArea;
+
+    if (allBuilderWindows.length > 0) {
+      let bottomY = 0;
+      let refX = workArea.x;
+      for (const win of allBuilderWindows) {
+        const b = win.getBounds();
+        const winBottom = b.y + b.height;
+        if (winBottom > bottomY) {
+          bottomY = winBottom;
+          refX = b.x;
+        }
+      }
+      const newY = bottomY + BUILDER_OVERLAY_GAP;
+      if (newY + defaultHeight <= workArea.y + workArea.height) {
+        x = refX;
+        y = newY;
+      }
+    }
+    if (x == null || y == null) {
+      x = Math.round(workArea.x + (workArea.width - defaultWidth) / 2);
+      y = Math.round(workArea.y + (workArea.height - defaultHeight) / 2);
+    }
+  }
+
+  const opts: Electron.BrowserWindowConstructorOptions = {
+    width: savedBounds?.width ?? 320,
+    height: savedBounds?.height ?? 300,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    useContentSize: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  };
+  w = new BrowserWindow(opts);
+  w.setAlwaysOnTop(true, "screen-saver");
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  const scheduleSave = () => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      saveTimeout = null;
+      if (w && !w.isDestroyed()) {
+        const b = w.getBounds();
+        saveBuilderOverlayBounds(buildId, { x: b.x, y: b.y, width: b.width, height: b.height });
+      }
+    }, 300);
+  };
+  w.on("move", scheduleSave);
+  w.on("close", () => {
+    if (w && !w.isDestroyed()) {
+      const b = w.getBounds();
+      saveBuilderOverlayBounds(buildId, { x: b.x, y: b.y, width: b.width, height: b.height });
+    }
+  });
+  w.on("closed", () => {
+    builderOverlayWindows.delete(buildId);
+  });
+  w.webContents.once("did-finish-load", () => {
+    const locked = overlayLockStateByBuild[buildId] ?? false;
+    if (locked) w!.setIgnoreMouseEvents(true, { forward: true });
+    else w!.setIgnoreMouseEvents(false);
+  });
+  w.hide();
+  builderOverlayWindows.set(buildId, w);
+
+  const base = getOverlayBaseUrl();
+  if (base.startsWith("http://") || base.startsWith("https://")) {
+    const sep = base.includes("?") ? "&" : "?";
+    w.loadURL(`${base}${sep}frame=builder&buildId=${encodeURIComponent(buildId)}`);
+  } else {
+    w.loadFile(base, { query: { frame: "builder", buildId } });
   }
   return w;
 }
@@ -283,48 +441,132 @@ app.whenReady().then(async () => {
   await runTailerTest();
 
   createMainWindow();
+
+  const iconPath = getIconPath();
+  if (iconPath) {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      tray = new Tray(icon);
+      tray.setToolTip("Powerlay Frontier");
+      tray.on("click", () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+      tray.setContextMenu(
+        Menu.buildFromTemplate([
+          {
+            label: "Open",
+            click: () => {
+              if (mainWindow) {
+                mainWindow.show();
+                mainWindow.focus();
+              }
+            },
+          },
+          { type: "separator" },
+          {
+            label: "Quit",
+            click: () => app.quit(),
+          },
+        ])
+      );
+    }
+  }
+
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
     }
   });
 });
 
 app.on("window-all-closed", () => {
+  if (tray) return; // Keep running in tray
   if (process.platform !== "darwin") app.quit();
 });
 
 ipcMain.handle("overlay:toggle", (_event, frame: OverlayFrame) => {
+  if (frame === "builder") return;
   const w = getOrCreateOverlayWindow(frame);
   if (w.isVisible()) w.hide();
   else w.show();
 });
 
+ipcMain.handle("overlay:toggle-builder", (_event, buildId: string) => {
+  const w = getOrCreateBuilderOverlayWindow(buildId);
+  if (w.isVisible()) w.hide();
+  else w.show();
+});
+
+ipcMain.handle("overlay:get-visible-builder-ids", () => {
+  const ids: string[] = [];
+  for (const [id, win] of builderOverlayWindows) {
+    if (win && !win.isDestroyed() && win.isVisible()) ids.push(id);
+  }
+  return ids;
+});
+
 ipcMain.handle("overlay:show", (_event, frame: OverlayFrame) => {
+  if (frame === "builder") return;
   getOrCreateOverlayWindow(frame).show();
 });
 
-ipcMain.handle("overlay:hide", (_event, frame: OverlayFrame) => {
-  overlayWindows[frame]?.hide();
+ipcMain.handle("overlay:hide", (_event, frame: OverlayFrame, buildId?: string) => {
+  if (frame === "builder" && buildId) {
+    builderOverlayWindows.get(buildId)?.hide();
+    return;
+  }
+  if (frame !== "builder") overlayWindows[frame]?.hide();
 });
 
-ipcMain.handle("overlay:get-builder-state", () => builderOverlayState);
-ipcMain.on("overlay:set-builder-state", (_event, state: BuilderOverlayState) => {
-  builderOverlayState = state ?? {};
+ipcMain.handle("overlay:hide-builder", (_event, buildId: string) => {
+  builderOverlayWindows.get(buildId)?.hide();
+  return undefined;
 });
 
-ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame) => {
+ipcMain.handle("overlay:get-builder-state", (_event, buildId: string) => {
+  return builderOverlayStateByBuild[buildId] ?? {};
+});
+
+ipcMain.on("overlay:set-builder-state", (_event, states: Record<string, BuilderOverlayState>) => {
+  builderOverlayStateByBuild = states && typeof states === "object" ? { ...states } : {};
+});
+
+ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame, buildId?: string) => {
+  if (frame === "builder" && buildId) return overlayLockStateByBuild[buildId] ?? false;
   return overlayLockState[frame] ?? false;
 });
 
-ipcMain.on("overlay:set-content-size", (_event, frame: OverlayFrame, width: number, height: number) => {
+ipcMain.on("overlay:set-content-size", (_event, frame: OverlayFrame, width: number, height: number, buildId?: string) => {
+  if (frame === "builder" && buildId) {
+    const w = builderOverlayWindows.get(buildId);
+    if (w && !w.isDestroyed() && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      w.setContentSize(Math.round(width), Math.round(height));
+    }
+    return;
+  }
   const w = overlayWindows[frame];
   if (w && !w.isDestroyed() && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
     w.setContentSize(Math.round(width), Math.round(height));
   }
 });
 
-ipcMain.handle("overlay:toggle-lock", (_event, frame: OverlayFrame) => {
+ipcMain.handle("overlay:toggle-lock", (_event, frame: OverlayFrame, buildId?: string) => {
+  if (frame === "builder" && buildId) {
+    overlayLockStateByBuild[buildId] = !(overlayLockStateByBuild[buildId] ?? false);
+    const locked = overlayLockStateByBuild[buildId];
+    const w = builderOverlayWindows.get(buildId);
+    if (w && !w.isDestroyed()) {
+      if (locked) w.setIgnoreMouseEvents(true, { forward: true });
+      else w.setIgnoreMouseEvents(false);
+    }
+    return locked;
+  }
   overlayLockState[frame] = !(overlayLockState[frame] ?? false);
   const locked = overlayLockState[frame];
   const w = overlayWindows[frame];

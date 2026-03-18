@@ -14,16 +14,21 @@ contextBridge.exposeInMainWorld("efOverlay", {
     delete: (id: string) => ipcRenderer.invoke("builds:delete", id),
   },
   overlay: {
-    setContentSize: (frame: "todo" | "builder", width: number, height: number) =>
-      ipcRenderer.send("overlay:set-content-size", frame, width, height),
+    setContentSize: (frame: "todo" | "builder", width: number, height: number, buildId?: string) =>
+      ipcRenderer.send("overlay:set-content-size", frame, width, height, buildId),
     toggle: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:toggle", frame),
+    toggleBuilder: (buildId: string) => ipcRenderer.invoke("overlay:toggle-builder", buildId),
+    getVisibleBuilderIds: () => ipcRenderer.invoke("overlay:get-visible-builder-ids") as Promise<string[]>,
     show: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:show", frame),
-    hide: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:hide", frame),
-    getLockState: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:get-lock-state", frame),
-    toggleLock: (frame: "todo" | "builder") => ipcRenderer.invoke("overlay:toggle-lock", frame),
-    getBuilderState: () => ipcRenderer.invoke("overlay:get-builder-state"),
-    setBuilderState: (state: { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number }) =>
-      ipcRenderer.send("overlay:set-builder-state", state),
+    hide: (frame: "todo" | "builder", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
+    hideBuilder: (buildId: string) => ipcRenderer.invoke("overlay:hide-builder", buildId),
+    getLockState: (frame: "todo" | "builder", buildId?: string) =>
+      ipcRenderer.invoke("overlay:get-lock-state", frame, buildId),
+    toggleLock: (frame: "todo" | "builder", buildId?: string) =>
+      ipcRenderer.invoke("overlay:toggle-lock", frame, buildId),
+    getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
+    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) =>
+      ipcRenderer.send("overlay:set-builder-state", states),
   },
   gameData: {
     get: () => ipcRenderer.invoke("gameData:get"),

@@ -96,6 +96,10 @@ export function getTrackingActive(): boolean {
   return trackingActive;
 }
 
+export function getTrackingBuildId(): string | null {
+  return trackingActive ? selectedBuildId : null;
+}
+
 export function setSelectedBuild(buildId: string | null): void {
   selectedBuildId = buildId;
 }
@@ -118,12 +122,13 @@ export function startTracking(
   logDir: string,
   types: TypesMap,
   pollIntervalMs: number = 1000,
-  planned?: Record<number, number>
+  planned?: Record<number, number>,
+  oreGroupIDs?: Set<number>
 ): void {
   trackingActive = true;
   trackingStartTime = Date.now();
   plannedVolByTypeId = planned ?? null;
-  startMiningLogReader(logDir, types, pollIntervalMs);
+  startMiningLogReader(logDir, types, pollIntervalMs, oreGroupIDs);
 }
 
 export function stopTracking(): void {
@@ -134,7 +139,8 @@ export function stopTracking(): void {
 export function startMiningLogReader(
   logDir: string,
   types: TypesMap,
-  pollIntervalMs: number = 1000
+  pollIntervalMs: number = 1000,
+  oreGroupIDs?: Set<number>
 ): void {
   stopMiningLogReader();
   logReaderError = null;
@@ -153,6 +159,10 @@ export function startMiningLogReader(
         return;
       }
       const t = types[String(typeID)];
+      if (oreGroupIDs && oreGroupIDs.size > 0) {
+        const groupID = t?.groupID;
+        if (groupID == null || !oreGroupIDs.has(groupID)) return;
+      }
       const volume = (t?.volume ?? 0) * event.quantity;
       if (volume <= 0) return;
       addMiningEvent(typeID, volume);

@@ -33,6 +33,24 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
+function EyeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 const BUILDS_STORAGE_KEY = "powerlay-builds";
 const TIMER_STORAGE_KEY = "powerlay-production-timer";
 const MINING_MINED_KEY = "powerlay-mining-mined";
@@ -194,8 +212,10 @@ export function BuildMiningSection() {
     tailerTestError?: string;
     logReaderError?: string;
     trackingActive?: boolean;
+    trackingBuildId?: string | null;
   }>({});
   const [tick, setTick] = useState(0);
+  const [buildsWithOverlayOpen, setBuildsWithOverlayOpen] = useState<Set<string>>(new Set());
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const handleMiningManualChange = useCallback((buildId: string, typeID: number, mined: number) => {
@@ -217,10 +237,6 @@ export function BuildMiningSection() {
   }, []);
 
   useEffect(() => {
-    window.efOverlay?.mining?.setSelectedBuild(selectedBuild?.id ?? null);
-  }, [selectedBuild?.id]);
-
-  useEffect(() => {
     const api = window.efOverlay?.mining;
     if (!api) return;
     const poll = () => {
@@ -230,6 +246,36 @@ export function BuildMiningSection() {
     poll();
     const id = setInterval(poll, 1000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const api = window.efOverlay?.overlay?.getVisibleBuilderIds;
+    if (!api) return;
+    const poll = async () => {
+      try {
+        const ids = await api();
+        setBuildsWithOverlayOpen((prev) => {
+          const next = new Set(ids ?? []);
+          if (prev.size === next.size && [...prev].every((id) => next.has(id))) return prev;
+          return next;
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+    poll();
+    const id = setInterval(poll, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleToggleOverlay = useCallback(async (buildId: string) => {
+    await window.efOverlay?.overlay?.toggleBuilder?.(buildId);
+    try {
+      const ids = await window.efOverlay?.overlay?.getVisibleBuilderIds?.();
+      setBuildsWithOverlayOpen(new Set(ids ?? []));
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const handleMiningStartTracking = useCallback(() => {
@@ -352,6 +398,13 @@ export function BuildMiningSection() {
   }, []);
 
   const handleDeleteBuild = useCallback(async (id: string) => {
+    window.efOverlay?.overlay?.hideBuilder?.(id);
+    setBuildsWithOverlayOpen((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     await removeBuild(id);
     setMiningMinedManual((prev) => {
       const next = { ...prev };
@@ -412,7 +465,27 @@ export function BuildMiningSection() {
     return totalManufacturingTimeSeconds(build.plannedItems, gameData.blueprints, gameData.types);
   }
 
-  /** Total volume (m³) of base materials (ore) for mining progress. Matches cargo space. */
+  const oreGroupIDsSet = useMemo(
+    () =>
+      gameData?.oreGroupIDs?.length
+        ? new Set(gameData.oreGroupIDs)
+        : null,
+    [gameData?.oreGroupIDs]
+  );
+
+  function filterToOreMaterials<T extends { typeID: number }>(
+    materials: T[],
+    types: Record<string, { groupID?: number }>
+  ): T[] {
+    if (!oreGroupIDsSet) return materials;
+    return materials.filter((m) => {
+      const t = types[String(m.typeID)];
+      const groupID = t?.groupID;
+      return groupID != null && oreGroupIDsSet.has(groupID);
+    });
+  }
+
+  /** Total volume (m³) of base materials (ore only) for mining progress. Matches cargo space. */
   function computeTotalOreVolume(build: BuildPlan): number {
     if (!gameData?.types || !gameData?.blueprints) return 0;
     const hasTypeIds = build.plannedItems.length > 0 && build.plannedItems.every((p) => p.typeID != null);
@@ -427,7 +500,8 @@ export function BuildMiningSection() {
       { overrides: build.intermediateBlueprintOverrides }
     );
     const baseList = getBaseMaterialsFromTrees(trees, gameData.types);
-    const baseRecord = Object.fromEntries(baseList.map((m) => [m.typeID, m.quantity]));
+    const oreList = filterToOreMaterials(baseList, gameData.types);
+    const baseRecord = Object.fromEntries(oreList.map((m) => [m.typeID, m.quantity]));
     return totalVolumeFromMaterials(baseRecord, gameData.types);
   }
 
@@ -444,7 +518,8 @@ export function BuildMiningSection() {
       gameData.types,
       { overrides: build.intermediateBlueprintOverrides }
     );
-    return getBaseMaterialsFromTrees(trees, gameData.types);
+    const baseList = getBaseMaterialsFromTrees(trees, gameData.types);
+    return filterToOreMaterials(baseList, gameData.types);
   }
 
   const handlePlayTimer = useCallback(
@@ -532,48 +607,57 @@ export function BuildMiningSection() {
 
   useEffect(() => {
     const api = window.efOverlay?.overlay?.setBuilderState;
-    if (!api || !selectedBuild) return;
-    const ts = timerState[selectedBuild.id];
-    const totalTime = computeTotalProductionTime(selectedBuild);
-    const totalOre = computeTotalOreVolume(selectedBuild);
-    const logByType = miningMinedFromLog[selectedBuild.id] ?? {};
-    const manualByType = miningMinedManual[selectedBuild.id] ?? {};
-    const neededOverride = miningNeededOverride[selectedBuild.id] ?? {};
-    const baseMaterials = computeBaseMaterials(selectedBuild);
+    if (!api || buildsWithOverlayOpen.size === 0) return;
     const types = gameData?.types ?? {};
-    let mined = 0;
-    let effectiveTotal = 0;
-    const miningOres =
-      baseMaterials.length > 0 && totalOre > 0
-        ? baseMaterials.map((m) => {
-            const computedNeeded = (types[String(m.typeID)]?.volume ?? 0) * m.quantity;
-            const neededVol = neededOverride[m.typeID] ?? computedNeeded;
-            effectiveTotal += neededVol;
-            const fromLog = logByType[m.typeID] ?? 0;
-            const manual = manualByType[m.typeID] ?? 0;
-            const minedVol = Math.min(Math.max(fromLog, manual), neededVol);
-            mined += minedVol;
-            return { name: m.name, minedVol, neededVol };
-          })
-        : undefined;
-    if (effectiveTotal <= 0) effectiveTotal = totalOre;
-    mined = Math.min(mined, effectiveTotal > 0 ? effectiveTotal : Infinity);
-    let productionLeftSeconds = 0;
-    if (totalTime > 0 && ts && (ts.status === "running" || ts.status === "paused")) {
-      const elapsed =
-        ts.status === "running"
-          ? ts.pausedElapsedSeconds + (Date.now() - ts.startedAt) / 1000
-          : ts.pausedElapsedSeconds;
-      productionLeftSeconds = Math.max(0, totalTime - elapsed);
+    const states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }> = {};
+    for (const buildId of buildsWithOverlayOpen) {
+      const build = builds.find((b) => b.id === buildId);
+      if (!build) continue;
+      const ts = timerState[build.id];
+      const totalTime = computeTotalProductionTime(build);
+      const totalOre = computeTotalOreVolume(build);
+      const logByType = miningMinedFromLog[build.id] ?? {};
+      const manualByType = miningMinedManual[build.id] ?? {};
+      const neededOverride = miningNeededOverride[build.id] ?? {};
+      const baseMaterials = computeBaseMaterials(build);
+      let mined = 0;
+      let effectiveTotal = 0;
+      const plannedVolByTypeId: Record<number, number> = {};
+      const miningOres =
+        baseMaterials.length > 0 && totalOre > 0
+          ? baseMaterials.map((m) => {
+              const computedNeeded = (types[String(m.typeID)]?.volume ?? 0) * m.quantity;
+              const neededVol = neededOverride[m.typeID] ?? computedNeeded;
+              plannedVolByTypeId[m.typeID] = (plannedVolByTypeId[m.typeID] ?? 0) + neededVol;
+              effectiveTotal += neededVol;
+              const fromLog = logByType[m.typeID] ?? 0;
+              const manual = manualByType[m.typeID] ?? 0;
+              const minedVol = Math.min(Math.max(fromLog, manual), neededVol);
+              mined += minedVol;
+              return { name: m.name, minedVol, neededVol };
+            })
+          : undefined;
+      if (effectiveTotal <= 0) effectiveTotal = totalOre;
+      mined = Math.min(mined, effectiveTotal > 0 ? effectiveTotal : Infinity);
+      let productionLeftSeconds = 0;
+      if (totalTime > 0 && ts && (ts.status === "running" || ts.status === "paused")) {
+        const elapsed =
+          ts.status === "running"
+            ? ts.pausedElapsedSeconds + (Date.now() - ts.startedAt) / 1000
+            : ts.pausedElapsedSeconds;
+        productionLeftSeconds = Math.max(0, totalTime - elapsed);
+      }
+      states[buildId] = {
+        buildName: build.name || "Unnamed",
+        mined: totalOre > 0 ? mined : undefined,
+        totalOre: totalOre > 0 ? totalOre : undefined,
+        productionLeftSeconds: productionLeftSeconds > 0 ? productionLeftSeconds : undefined,
+        miningOres,
+        plannedVolByTypeId: Object.keys(plannedVolByTypeId).length > 0 ? plannedVolByTypeId : undefined,
+      };
     }
-    api({
-      buildName: selectedBuild.name || "Unnamed",
-      mined: totalOre > 0 ? mined : undefined,
-      totalOre: totalOre > 0 ? totalOre : undefined,
-      productionLeftSeconds: productionLeftSeconds > 0 ? productionLeftSeconds : undefined,
-      miningOres,
-    });
-  }, [selectedBuild, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, tick, gameData]);
+    api(states);
+  }, [builds, buildsWithOverlayOpen, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, tick, gameData]);
 
   return (
     <div className="flex flex-1 min-h-0 min-w-0">
@@ -622,11 +706,6 @@ export function BuildMiningSection() {
                 }`}
               >
                 <div className="flex items-center w-full cursor-pointer min-h-[40px]">
-                  {isFinished && (
-                    <span className="shrink-0 w-8 h-8 flex items-center justify-center pl-1 text-green-500" title="Build finished">
-                      <CheckIcon />
-                    </span>
-                  )}
                   {editingBuildId === b.id ? (
                     <input
                       ref={editInputRef}
@@ -657,6 +736,23 @@ export function BuildMiningSection() {
                       {b.name || "Unnamed"}
                     </button>
                   )}
+                  <span
+                    className="shrink-0 w-8 h-8 flex items-center justify-center"
+                    title={isFinished ? "Build finished" : undefined}
+                  >
+                    {isFinished ? <CheckIcon className="text-green-500" /> : null}
+                  </span>
+                  <button
+                    type="button"
+                    className={`shrink-0 w-8 h-8 flex items-center justify-center rounded bg-bg text-text opacity-80 hover:opacity-100 ${buildsWithOverlayOpen.has(b.id) ? "text-amber-500" : "text-muted"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleOverlay(b.id);
+                    }}
+                    title={buildsWithOverlayOpen.has(b.id) ? "Hide overlay" : "Show overlay"}
+                  >
+                    {buildsWithOverlayOpen.has(b.id) ? <EyeIcon /> : <EyeOffIcon />}
+                  </button>
                   <button
                     type="button"
                     className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-bg text-text opacity-80 hover:opacity-100"
@@ -748,6 +844,8 @@ export function BuildMiningSection() {
             computeTotalProductionTime={computeTotalProductionTime}
             computeTotalOreVolume={computeTotalOreVolume}
             computeBaseMaterials={computeBaseMaterials}
+            overlayVisible={buildsWithOverlayOpen.has(selectedBuild.id)}
+            onToggleOverlay={() => handleToggleOverlay(selectedBuild.id)}
           />
         )}
       </div>

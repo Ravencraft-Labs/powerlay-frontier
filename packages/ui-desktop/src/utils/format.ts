@@ -37,6 +37,20 @@ export function formatWithThousandsSeparator(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+/**
+ * Parse clipboard text that may contain EVE game HTML (e.g. showinfo links).
+ * Extracts the text from the first <a>...</a> tag if present, otherwise returns trimmed input.
+ * Examples:
+ *   <a href="showinfo:5//30015981" alt="Current Solar System">OCV-D55</a> → "OCV-D55"
+ *   Solar System<br>Region &gt; <a href="showinfo:3//10000143">3RR-Y-93</a> → "3RR-Y-93"
+ */
+export function parseGamePaste(text: string): string {
+  const trimmed = String(text).trim();
+  if (!trimmed) return "";
+  const match = trimmed.match(/<a[^>]*>([^<]*)<\/a>/i);
+  return match ? match[1].trim() : trimmed;
+}
+
 /** Format seconds as "12h 10m" or "5m 30s" for production timer. */
 export function formatProductionTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0s";

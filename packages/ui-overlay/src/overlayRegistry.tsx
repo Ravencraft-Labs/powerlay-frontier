@@ -22,9 +22,18 @@ export function getCurrentFrame(): OverlayFrameId {
   return (f === "builder" || f === "todo" ? f : DEFAULT_FRAME) as OverlayFrameId;
 }
 
+/** Reads buildId from URL query (?buildId=...). Used for builder overlay. */
+export function getBuildIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("buildId");
+}
+
 /** Renders the overlay component for the current frame. */
 export function OverlayRouter() {
   const frame = getCurrentFrame();
-  const Component = OVERLAY_REGISTRY[frame];
-  return Component ? <Component /> : null;
+  const buildId = frame === "builder" ? getBuildIdFromUrl() : null;
+  if (frame === "builder") return <BuildTrackingOverlay buildId={buildId} />;
+  if (frame === "todo") return <TribeTodoOverlay />;
+  return null;
 }

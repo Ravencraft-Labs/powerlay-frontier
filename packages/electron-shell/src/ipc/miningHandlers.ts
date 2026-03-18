@@ -3,6 +3,7 @@ import {
   getMiningState,
   getLogReaderError,
   getTrackingActive,
+  getTrackingBuildId,
   setSelectedBuild,
   setMiningState,
   resetMiningForBuild,
@@ -19,6 +20,7 @@ export function registerMiningHandlers(): void {
     tailerTestError: getTailerTestError(),
     logReaderError: getLogReaderError(),
     trackingActive: getTrackingActive(),
+    trackingBuildId: getTrackingBuildId(),
   }));
   ipcMain.handle(
     "mining:start-tracking",
@@ -33,11 +35,16 @@ export function registerMiningHandlers(): void {
         "%USERPROFILE%\\Documents\\Frontier\\Logs\\Gamelogs";
       if (gameData.types && Object.keys(gameData.types).length > 0) {
         if (opts?.buildId != null) setSelectedBuild(opts.buildId);
+        const oreGroupIDsSet =
+          gameData.oreGroupIDs?.length
+            ? new Set(gameData.oreGroupIDs)
+            : undefined;
         startTracking(
           logDir,
           gameData.types,
           1000,
-          opts?.plannedVolByTypeId
+          opts?.plannedVolByTypeId,
+          oreGroupIDsSet
         );
       }
     }

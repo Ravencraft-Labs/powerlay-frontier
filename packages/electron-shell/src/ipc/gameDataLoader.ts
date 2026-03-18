@@ -6,6 +6,7 @@ import type { TypesMap, BlueprintsMap } from "@powerlay/core";
 export interface GameDataErrors {
   types?: string;
   blueprints?: string;
+  oreGroupIDs?: string;
 }
 
 export interface GameData {
@@ -16,6 +17,8 @@ export interface GameData {
   blueprintToFacilityNames: Record<number, string>;
   /** Facility type names from industry_facilities (e.g. "Printer S", "Portable Refinery") */
   facilityTypeNames: string[];
+  /** groupIDs for mineable ores (from data/stripped/oreGroupIDs.json). Empty = no filtering. */
+  oreGroupIDs: number[];
   errors?: GameDataErrors;
 }
 
@@ -196,12 +199,29 @@ export async function loadGameData(): Promise<GameData> {
     ? getFacilityTypeNames(industryFacilitiesResult.data, typesResult.data)
     : [];
 
+  const oreGroupIDsPath = path.join(root, "data", "stripped", "oreGroupIDs.json");
+  let oreGroupIDs: number[] = [];
+  if (fs.existsSync(oreGroupIDsPath)) {
+    try {
+      const raw = fs.readFileSync(oreGroupIDsPath, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        oreGroupIDs = parsed.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      }
+    } catch {
+      if (Object.keys(typesResult.data).length > 0) {
+        errors.oreGroupIDs = "Could not parse oreGroupIDs.json";
+      }
+    }
+  }
+
   cached = {
     types: typesResult.data,
     blueprints,
     starSystems,
     blueprintToFacilityNames,
     facilityTypeNames,
+    oreGroupIDs,
     errors: Object.keys(errors).length > 0 ? errors : undefined,
   };
   return cached;

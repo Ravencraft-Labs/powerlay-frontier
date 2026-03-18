@@ -6,6 +6,8 @@ import { OverlayLockProvider } from "../context/OverlayLockContext";
 export interface OverlayFrameProps {
   title: React.ReactNode;
   children: React.ReactNode | ((locked: boolean) => React.ReactNode);
+  /** For builder overlay: buildId for lock state and content size. */
+  buildId?: string | null;
 }
 
 function LockClosedIcon({ className }: { className?: string }) {
@@ -40,15 +42,16 @@ function CloseIcon({ className }: { className?: string }) {
  * Reports content size to main process so the overlay window matches exactly (no invisible click-blocking area).
  * When unlocked: shows lock and close buttons. When locked: hides all interactive buttons.
  */
-export function OverlayFrame({ title, children }: OverlayFrameProps) {
+export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
+  const frame = getCurrentFrame();
 
   const loadLockState = useCallback(async () => {
-    const api = (window as unknown as { efOverlay?: { overlay?: { getLockState?: (f: string) => Promise<boolean> } } }).efOverlay;
-    const lockedState = await api?.overlay?.getLockState?.(getCurrentFrame());
+    const api = (window as unknown as { efOverlay?: { overlay?: { getLockState?: (f: string, bid?: string) => Promise<boolean> } } }).efOverlay;
+    const lockedState = await api?.overlay?.getLockState?.(frame, frame === "builder" ? buildId ?? undefined : undefined);
     if (typeof lockedState === "boolean") setLocked(lockedState);
-  }, []);
+  }, [frame, buildId]);
 
   useEffect(() => {
     loadLockState();
@@ -58,13 +61,13 @@ export function OverlayFrame({ title, children }: OverlayFrameProps) {
 
   useEffect(() => {
     const el = containerRef.current;
-    const api = (window as unknown as { efOverlay?: { overlay?: { setContentSize?: (f: string, w: number, h: number) => void } } }).efOverlay;
+    const api = (window as unknown as { efOverlay?: { overlay?: { setContentSize?: (f: string, w: number, h: number, bid?: string) => void } } }).efOverlay;
     if (!el || !api?.overlay?.setContentSize) return;
 
     const report = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        api.overlay!.setContentSize!(getCurrentFrame(), Math.ceil(rect.width), Math.ceil(rect.height));
+        api.overlay!.setContentSize!(frame, Math.ceil(rect.width), Math.ceil(rect.height), frame === "builder" ? buildId ?? undefined : undefined);
       }
     };
 
@@ -72,17 +75,21 @@ export function OverlayFrame({ title, children }: OverlayFrameProps) {
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [frame, buildId]);
 
   const handleToggleLock = async () => {
-    const api = (window as unknown as { efOverlay?: { overlay?: { toggleLock?: (f: string) => Promise<boolean> } } }).efOverlay;
-    const newLocked = await api?.overlay?.toggleLock?.(getCurrentFrame());
+    const api = (window as unknown as { efOverlay?: { overlay?: { toggleLock?: (f: string, bid?: string) => Promise<boolean> } } }).efOverlay;
+    const newLocked = await api?.overlay?.toggleLock?.(frame, frame === "builder" ? buildId ?? undefined : undefined);
     if (typeof newLocked === "boolean") setLocked(newLocked);
   };
 
   const handleClose = () => {
-    const api = (window as unknown as { efOverlay?: { overlay?: { hide?: (f: string) => void } } }).efOverlay;
-    api?.overlay?.hide?.(getCurrentFrame());
+    const api = (window as unknown as { efOverlay?: { overlay?: { hide?: (f: string, bid?: string) => void; hideBuilder?: (bid: string) => void } } }).efOverlay;
+    if (frame === "builder" && buildId) {
+      api?.overlay?.hideBuilder?.(buildId);
+    } else {
+      api?.overlay?.hide?.(frame);
+    }
   };
 
   const hasOverlayApi = typeof window !== "undefined" && (window as unknown as { efOverlay?: { overlay?: { toggleLock?: unknown; hide?: unknown } } }).efOverlay?.overlay?.toggleLock;

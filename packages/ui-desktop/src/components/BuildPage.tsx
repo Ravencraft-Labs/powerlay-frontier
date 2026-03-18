@@ -28,10 +28,9 @@ import {
   timeToRefineFromAmount,
 } from "@powerlay/core";
 import type { GameData } from "../preload";
-import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime, parseCompactNumber } from "../utils/format";
+import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime, parseCompactNumber, parseGamePaste } from "../utils/format";
 import { ItemIcon } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
-import { OverlayWithLock } from "./OverlayWithLock";
 
 const DEBOUNCE_MS = 500;
 const TOOLTIP_DELAY_MS = 150;
@@ -100,12 +99,14 @@ interface BuildPageProps {
   onMiningManualChange?: (buildId: string, typeID: number, mined: number) => void;
   onMiningNeededOverrideChange?: (buildId: string, typeID: number, needed: number) => void;
   onMiningReset?: (buildId: string) => void;
-  miningErrors?: { tailerTestError?: string; logReaderError?: string; trackingActive?: boolean };
+  miningErrors?: { tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null };
   onMiningStartTracking?: () => void;
   onMiningStopTracking?: () => void;
   computeTotalProductionTime?: (plan: BuildPlan) => number;
   computeTotalOreVolume?: (plan: BuildPlan) => number;
   computeBaseMaterials?: (plan: BuildPlan) => Array<{ typeID: number; name: string; quantity: number }>;
+  overlayVisible?: boolean;
+  onToggleOverlay?: () => void;
 }
 
 function normalizePlan(p: BuildPlan): BuildPlan {
@@ -200,7 +201,7 @@ function BlueprintOptionSelect({
     <div ref={containerRef} className={`relative inline-block ${className}`}>
       <button
         type="button"
-        className={`${baseCls} cursor-pointer text-left w-full max-w-[280px]`}
+        className={`${baseCls} cursor-pointer text-left w-full max-w-[280px] flex items-center justify-between`}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
@@ -215,41 +216,55 @@ function BlueprintOptionSelect({
       >
         {selected ? (
           <>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {(selected.inputTypeIDs ?? []).slice(0, MAX_INPUT_ICONS).map((tid) => (
-                <ItemIcon
-                  key={tid}
-                  typeID={tid}
-                  size={16}
-                  fallback={gameData?.types ? gameData.types[String(tid)]?.name ?? String(tid) : String(tid)}
-                />
-              ))}
-              {(selected.inputTypeIDs?.length ?? 0) > MAX_INPUT_ICONS && (
-                <span className="text-xs text-muted">+{(selected.inputTypeIDs?.length ?? 0) - MAX_INPUT_ICONS}</span>
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {(selected.inputTypeIDs ?? []).slice(0, MAX_INPUT_ICONS).map((tid) => (
+                  <ItemIcon
+                    key={tid}
+                    typeID={tid}
+                    size={16}
+                    fallback={gameData?.types ? gameData.types[String(tid)]?.name ?? String(tid) : String(tid)}
+                  />
+                ))}
+                {(selected.inputTypeIDs?.length ?? 0) > MAX_INPUT_ICONS && (
+                  <span className="text-xs text-muted">+{(selected.inputTypeIDs?.length ?? 0) - MAX_INPUT_ICONS}</span>
+                )}
+              </div>
+              <span className="text-muted text-xs flex-shrink-0">→</span>
+              <ItemIcon
+                typeID={selected.productTypeID}
+                size={18}
+                fallback={isOverride ? `BP ${selected.blueprintTypeID}` : productName}
+              />
+              {!isOverride && (
+                <span className="text-muted text-xs flex-shrink-0">
+                  ({formatOreLabel(selected.baseOrePerUnit, shortenNumbers)} ore)
+                </span>
+              )}
+              {selected.facility && (
+                <span
+                  className="text-xs px-1 py-0.5 rounded bg-surface text-muted min-w-0 truncate max-w-[200px]"
+                  title={selected.facility}
+                >
+                  {selected.facility}
+                </span>
               )}
             </div>
-            <span className="text-muted text-xs flex-shrink-0">→</span>
-            <ItemIcon
-              typeID={selected.productTypeID}
-              size={18}
-              fallback={isOverride ? `BP ${selected.blueprintTypeID}` : productName}
-            />
-            {!isOverride && (
-              <span className="text-muted text-xs flex-shrink-0">
-                ({formatOreLabel(selected.baseOrePerUnit, shortenNumbers)} ore)
-              </span>
-            )}
-            {selected.facility && (
-              <span
-                className="text-xs px-1 py-0.5 rounded bg-surface text-muted min-w-0 truncate max-w-[200px]"
-                title={selected.facility}
-              >
-                {selected.facility}
-              </span>
-            )}
+            <span className={`text-muted text-xs flex-shrink-0 ml-1 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className="inline-block">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
           </>
         ) : (
-          <span className="text-muted">—</span>
+          <>
+            <span className="text-muted flex-1">—</span>
+            <span className="text-muted text-xs flex-shrink-0 ml-1" aria-hidden>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className="inline-block">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </>
         )}
       </button>
       {open && (
@@ -331,6 +346,8 @@ function ProductionTreeNodeRow({
   shortenNumbers,
   filterByFacilities,
   addedFacilityNames,
+  collapsedPaths,
+  onToggleCollapse,
 }: {
   node: ProductionTreeNode;
   depth: number;
@@ -342,8 +359,12 @@ function ProductionTreeNodeRow({
   shortenNumbers: boolean;
   filterByFacilities: boolean;
   addedFacilityNames: Set<string>;
+  collapsedPaths: Set<string>;
+  onToggleCollapse: (path: string) => void;
 }) {
   const hasChildren = node.children.length > 0;
+  const isCollapsed = collapsedPaths.has(pathPrefix);
+  const isCollapsible = hasChildren && (depth === 0 || depth === 1);
   const blueprintToFacilityNames = gameData?.blueprintToFacilityNames ?? {};
   const allOptions =
     gameData?.blueprints && gameData?.types
@@ -379,11 +400,25 @@ function ProductionTreeNodeRow({
   return (
     <li className="builder-tree-node text-text text-sm" data-depth={depth} data-last={isLast}>
       <span className="inline-flex items-center gap-1.5">
+        {isCollapsible && (
+          <button
+            type="button"
+            className="w-5 h-5 flex items-center justify-center rounded border-0 bg-transparent text-muted hover:text-text cursor-pointer p-0 shrink-0"
+            onClick={() => onToggleCollapse(pathPrefix)}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? "Expand" : "Collapse"}
+            title={isCollapsed ? "Expand" : "Collapse"}
+          >
+            <span className={`inline-block transition-transform ${isCollapsed ? "" : "rotate-90"}`}>
+              ▶
+            </span>
+          </button>
+        )}
         <ItemIcon typeID={node.typeID} size={20} />
         <CompactNumber value={node.quantity} compact={shortenNumbers} />× {node.name}
       </span>
       {showDropdown && (
-        <div className="ml-2" onClick={(e) => e.stopPropagation()}>
+        <div className="ml-2 mb-2" onClick={(e) => e.stopPropagation()}>
           <BlueprintOptionSelect
             options={optionsForSelect}
             value={effectiveBpId ?? undefined}
@@ -396,7 +431,7 @@ function ProductionTreeNodeRow({
           />
         </div>
       )}
-      {hasChildren && (
+      {hasChildren && !isCollapsed && (
         <ul className="builder-tree-children" aria-hidden>
           {node.children.map((child, i) => (
             <ProductionTreeNodeRow
@@ -411,12 +446,27 @@ function ProductionTreeNodeRow({
               shortenNumbers={shortenNumbers}
               filterByFacilities={filterByFacilities}
               addedFacilityNames={addedFacilityNames}
+              collapsedPaths={collapsedPaths}
+              onToggleCollapse={onToggleCollapse}
             />
           ))}
         </ul>
       )}
     </li>
   );
+}
+
+function collectCollapsiblePaths(trees: ProductionTreeNode[], prefix = ""): string[] {
+  const paths: string[] = [];
+  trees.forEach((node, i) => {
+    const path = prefix ? `${prefix}/${node.typeID}` : `${i}/${node.typeID}`;
+    if (node.children.length > 0) {
+      const depth = path.split("/").length - 2;
+      if (depth <= 1) paths.push(path);
+      paths.push(...collectCollapsiblePaths(node.children, path));
+    }
+  });
+  return paths;
 }
 
 function ProductionTreeList({
@@ -436,7 +486,43 @@ function ProductionTreeList({
   filterByFacilities: boolean;
   addedFacilityNames: Set<string>;
 }) {
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
+  const toggleCollapse = useCallback((path: string) => {
+    setCollapsedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const collapsiblePaths = useMemo(() => collectCollapsiblePaths(trees), [trees]);
+  const expandAll = useCallback(() => setCollapsedPaths(new Set()), []);
+  const collapseAll = useCallback(
+    () => setCollapsedPaths(new Set(collapsiblePaths)),
+    [collapsiblePaths]
+  );
+
   return (
+    <div>
+      {collapsiblePaths.length > 0 && (
+        <div className="flex gap-2 mb-2">
+          <button
+            type="button"
+            className="px-2 py-1 text-xs rounded border border-border-input bg-surface text-text hover:bg-border cursor-pointer"
+            onClick={expandAll}
+          >
+            Expand all
+          </button>
+          <button
+            type="button"
+            className="px-2 py-1 text-xs rounded border border-border-input bg-surface text-text hover:bg-border cursor-pointer"
+            onClick={collapseAll}
+          >
+            Collapse all
+          </button>
+        </div>
+      )}
     <ul className="builder-tree-list list-none m-0 p-0 text-sm">
       {trees.map((node, i) => (
         <ProductionTreeNodeRow
@@ -451,9 +537,12 @@ function ProductionTreeList({
           shortenNumbers={shortenNumbers}
           filterByFacilities={filterByFacilities}
           addedFacilityNames={addedFacilityNames}
+          collapsedPaths={collapsedPaths}
+          onToggleCollapse={toggleCollapse}
         />
       ))}
     </ul>
+    </div>
   );
 }
 
@@ -511,7 +600,7 @@ function ProductionNetworkGraphView({
             </div>
           </div>
           {colIndex < columns.length - 1 && (
-            <div className="flex-shrink-0 flex flex-col justify-center gap-0.5 min-w-[100px] text-muted text-xs py-2">
+            <div className="flex-shrink-0 flex flex-col justify-center gap-0.5 min-w-[100px] text-text text-sm font-medium py-2">
               {edges
                 .filter((e) => e.fromColumn === colIndex && e.toColumn === colIndex + 1)
                 .map((e, i) => {
@@ -626,8 +715,11 @@ const TOTAL_HELP = (
       Add planned items above to see totals. Volume is the summed cargo space for all materials.
     </p>
     <p className="mb-2 font-medium">How to read</p>
+    <p className="mb-3">
+      <strong>Left:</strong> Ores to mine (raw materials) and building resources (refined/crafted). <strong>Right:</strong> Calculations (laser lenses, fuel, mining and refining time).
+    </p>
     <p>
-      <strong>Ores to mine</strong> = raw materials from mining. <strong>Building resources</strong> = refined or crafted materials. Volume (m³) tells you total cargo needs.
+      Volume (m³) tells you total cargo needs.
     </p>
   </>
 );
@@ -743,6 +835,24 @@ function OreEditPopover({
   );
 }
 
+function LockClosedIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function LockOpenIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+    </svg>
+  );
+}
+
 function MiningTrackingSubFrame({
   buildId,
   baseMaterials,
@@ -752,7 +862,7 @@ function MiningTrackingSubFrame({
   neededOverride,
   totalOre,
   errors,
-  trackingActive,
+  trackingBuildId,
   onStartTracking,
   onStopTracking,
   onManualChange,
@@ -761,6 +871,8 @@ function MiningTrackingSubFrame({
   inputNumCls,
   btnCls,
   formatCompactNumber,
+  overlayVisible = false,
+  onToggleOverlay,
 }: {
   buildId: string;
   baseMaterials: Array<{ typeID: number; name: string; quantity: number }>;
@@ -770,7 +882,7 @@ function MiningTrackingSubFrame({
   neededOverride: Record<number, number>;
   totalOre: number;
   errors: { tailerTestError?: string; logReaderError?: string };
-  trackingActive: boolean;
+  trackingBuildId?: string | null;
   onStartTracking?: () => void;
   onStopTracking?: () => void;
   onManualChange?: (typeID: number, mined: number) => void;
@@ -779,13 +891,33 @@ function MiningTrackingSubFrame({
   inputNumCls: string;
   btnCls: string;
   formatCompactNumber: (n: number) => string;
+  overlayVisible?: boolean;
+  onToggleOverlay?: () => void;
 }) {
   const [fillAllChecked, setFillAllChecked] = useState(false);
   const [snapshotBeforeFillAll, setSnapshotBeforeFillAll] = useState<Record<number, number> | null>(null);
   const [filledOres, setFilledOres] = useState<Set<number>>(() => new Set());
   const [snapshotPerOre, setSnapshotPerOre] = useState<Record<number, number>>({});
   const [editingOre, setEditingOre] = useState<number | null>(null);
+  const [overlayLocked, setOverlayLocked] = useState(false);
   const prevHadDataRef = useRef(false);
+
+  const loadOverlayLockState = useCallback(async () => {
+    const locked = await window.efOverlay?.overlay?.getLockState?.("builder", buildId);
+    if (typeof locked === "boolean") setOverlayLocked(locked);
+  }, [buildId]);
+
+  useEffect(() => {
+    if (!window.efOverlay?.overlay?.getLockState) return;
+    loadOverlayLockState();
+    const id = setInterval(loadOverlayLockState, 500);
+    return () => clearInterval(id);
+  }, [loadOverlayLockState]);
+
+  const handleToggleOverlayLock = useCallback(async () => {
+    const newLocked = await window.efOverlay?.overlay?.toggleLock?.("builder", buildId);
+    if (typeof newLocked === "boolean") setOverlayLocked(newLocked);
+  }, [buildId]);
 
   useEffect(() => {
     const hasData = Object.keys(manualMined).length > 0 || Object.keys(neededOverride).length > 0;
@@ -800,6 +932,7 @@ function MiningTrackingSubFrame({
   }, [manualMined, neededOverride]);
 
   const errorMsg = errors.tailerTestError ?? errors.logReaderError;
+  const isThisBuildTracking = trackingBuildId === buildId;
   const inputCls = "w-14 px-1.5 py-0.5 rounded border border-border-input bg-bg text-text text-xs focus:outline-none focus:border-muted";
 
   const getEffectiveNeeded = useCallback(
@@ -901,10 +1034,10 @@ function MiningTrackingSubFrame({
       <div className="flex items-center justify-between gap-2 mb-2">
         <h4 className="text-sm font-semibold text-text m-0 flex items-center gap-2">
           Mining
-          {trackingActive && (
+          {isThisBuildTracking && (
             <span
               className="w-2 h-2 rounded-full bg-red-500 shrink-0"
-              title="Tracking active"
+              title="This build is tracking"
               aria-hidden
             />
           )}
@@ -929,7 +1062,7 @@ function MiningTrackingSubFrame({
         <button
           type="button"
           className={`shrink-0 w-8 h-8 flex items-center justify-center rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
-            trackingActive
+            isThisBuildTracking
               ? "text-amber-500 hover:bg-amber-500/20"
               : "text-green-500 hover:bg-green-500/20"
           }`}
@@ -937,13 +1070,13 @@ function MiningTrackingSubFrame({
           title={
             errorMsg
               ? `${errorMsg} — Check settings.`
-              : trackingActive
+              : isThisBuildTracking
                 ? "Stop tracking"
                 : "Start tracking"
           }
-          onClick={() => (trackingActive ? onStopTracking?.() : onStartTracking?.())}
+          onClick={() => (isThisBuildTracking ? onStopTracking?.() : onStartTracking?.())}
         >
-          {trackingActive ? <PauseIcon /> : <PlayIcon />}
+          {isThisBuildTracking ? <PauseIcon /> : <PlayIcon />}
         </button>
         {showReset && (
           <button
@@ -953,6 +1086,26 @@ function MiningTrackingSubFrame({
             title="Reset mined amount"
           >
             <ResetIcon />
+          </button>
+        )}
+        {onToggleOverlay && (
+          <button
+            type="button"
+            className={`shrink-0 px-2 py-1 rounded text-xs border transition-colors ${overlayVisible ? "border-amber-500 text-amber-500 bg-amber-500/10" : "border-border text-muted hover:text-text hover:bg-border"}`}
+            onClick={onToggleOverlay}
+            title={overlayVisible ? "Hide overlay" : "Show overlay"}
+          >
+            Overlay
+          </button>
+        )}
+        {window.efOverlay?.overlay?.toggleLock && (
+          <button
+            type="button"
+            className={`shrink-0 w-8 h-8 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border transition-colors ${overlayLocked ? "text-amber-500" : ""}`}
+            onClick={handleToggleOverlayLock}
+            title={overlayLocked ? "Overlay locked (click-through)" : "Unlock overlay to move it"}
+          >
+            {overlayLocked ? <LockClosedIcon /> : <LockOpenIcon />}
           </button>
         )}
       </div>
@@ -1049,6 +1202,8 @@ export function BuildPage({
   computeTotalProductionTime = () => 0,
   computeTotalOreVolume = () => 0,
   computeBaseMaterials = () => [],
+  overlayVisible = false,
+  onToggleOverlay,
 }: BuildPageProps) {
   const normalizedPlan = normalizePlan(plan);
   const [local, setLocal] = useState<BuildPlan>(() => normalizedPlan);
@@ -1354,6 +1509,7 @@ export function BuildPage({
   const sectionCls = "bg-surface rounded-lg px-5 py-4 border border-border";
   const headingCls = "m-0 mb-2 text-[0.9rem] font-semibold text-text";
   const rowCls = "flex items-center gap-2 mb-2";
+  const plannedItemRowCls = "flex items-center gap-2 mb-4";
   const inputCls = "px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm focus:outline-none focus:border-muted max-w-full";
   const inputNumCls = "w-[70px] px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm focus:outline-none focus:border-muted";
   const btnCls = "cursor-pointer px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface";
@@ -1371,7 +1527,6 @@ export function BuildPage({
               onChange={(starSystemId) => update({ starSystemId: starSystemId || undefined })}
             />
           </div>
-          <OverlayWithLock frame="builder" btnCls={btnCls} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <MiningTrackingSubFrame
@@ -1383,7 +1538,7 @@ export function BuildPage({
             neededOverride={miningNeededOverride[plan.id] ?? {}}
             totalOre={computeTotalOreVolume(plan)}
             errors={miningErrors}
-            trackingActive={miningErrors.trackingActive ?? false}
+            trackingBuildId={miningErrors.trackingBuildId ?? null}
             onStartTracking={onMiningStartTracking}
             onStopTracking={onMiningStopTracking}
             onManualChange={(typeID, mined) => onMiningManualChange?.(plan.id, typeID, mined)}
@@ -1392,6 +1547,8 @@ export function BuildPage({
             inputNumCls={inputNumCls}
             btnCls={btnCls}
             formatCompactNumber={formatCompactNumber}
+            overlayVisible={overlayVisible}
+            onToggleOverlay={onToggleOverlay}
           />
           <div className="rounded-md border border-border bg-bg px-4 py-3">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -1528,7 +1685,7 @@ export function BuildPage({
                 ]
               : blueprintOptions;
           return (
-            <div key={idx} className={rowCls}>
+            <div key={idx} className={plannedItemRowCls}>
               {p.typeID != null && <ItemIcon typeID={p.typeID} size={20} />}
               {gameData && Object.keys(gameData.types).length > 0 ? (
                 <ItemSearchWithTypes
@@ -1577,6 +1734,15 @@ export function BuildPage({
                     quantity: Number(e.target.value) || 0,
                   })
                 }
+                onContextMenu={async (e) => {
+                  e.preventDefault();
+                  try {
+                    const raw = await navigator.clipboard.readText();
+                    const text = parseGamePaste(raw);
+                    const qty = Math.max(0, parseInt(text, 10) || 0);
+                    updatePlannedItem(idx, { ...p, quantity: qty });
+                  } catch {}
+                }}
                 className={inputNumCls}
                 placeholder="Qty"
               />
@@ -1600,45 +1766,67 @@ export function BuildPage({
         {useMaterialsPath ? (
           <div className="text-sm text-text space-y-1">
             <div>Volume: <CompactNumber value={volume} compact={shortenNumbers} /> m³</div>
-            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-              {baseMaterialsList.length > 0 ? (
-                <div>
-                  <div className="text-muted text-xs mb-1">Ores to mine (base materials):</div>
-                  <ul className="list-none m-0 p-0 space-y-0.5">
-                    {baseMaterialsList.map((item) => (
-                      <li key={item.typeID} className="flex items-center gap-1.5">
-                        <ItemIcon typeID={item.typeID} size={20} />
-                        {item.name}: <CompactNumber value={item.quantity} compact={shortenNumbers} />
-                      </li>
-                    ))}
-                  </ul>
+            <div className="mt-2 flex flex-wrap gap-x-8 gap-y-2">
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {baseMaterialsList.length > 0 ? (
+                  <div>
+                    <div className="text-muted text-xs mb-1">Ores to mine (base materials):</div>
+                    <ul className="list-none m-0 p-0 space-y-0.5">
+                      {baseMaterialsList.map((item) => (
+                        <li key={item.typeID} className="flex items-center gap-1.5">
+                          <ItemIcon typeID={item.typeID} size={20} />
+                          {item.name}: <CompactNumber value={item.quantity} compact={shortenNumbers} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {advancedMaterialsList.length > 0 ? (
+                  <div>
+                    <div className="text-muted text-xs mb-1">Building resources:</div>
+                    <ul className="list-none m-0 p-0 space-y-0.5">
+                      {advancedMaterialsList.map((item) => (
+                        <li key={item.typeID} className="flex items-center gap-1.5">
+                          <ItemIcon typeID={item.typeID} size={20} />
+                          {item.name}: <CompactNumber value={item.quantity} compact={shortenNumbers} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+              <div className="text-muted text-xs">
+                <div className="mb-1 font-medium text-text">Calculations <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-md border border-border/60 bg-surface/60 text-muted select-none cursor-default font-normal" role="status">Under construction</span></div>
+                <div className="space-y-0.5">
+                  <div>Laser lenses: <CompactNumber value={lenses} compact={shortenNumbers} /></div>
+                  <div>Fuel needed: <CompactNumber value={fuel} compact={shortenNumbers} /></div>
+                  <div>Time to mine: <CompactNumber value={timeMine} compact={shortenNumbers} /> s</div>
+                  <div>Time to refine: <CompactNumber value={timeRefine} compact={shortenNumbers} /> s</div>
                 </div>
-              ) : null}
-              {advancedMaterialsList.length > 0 ? (
-                <div>
-                  <div className="text-muted text-xs mb-1">Building resources:</div>
-                  <ul className="list-none m-0 p-0 space-y-0.5">
-                    {advancedMaterialsList.map((item) => (
-                      <li key={item.typeID} className="flex items-center gap-1.5">
-                        <ItemIcon typeID={item.typeID} size={20} />
-                        {item.name}: <CompactNumber value={item.quantity} compact={shortenNumbers} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              </div>
             </div>
           </div>
         ) : (
-          <>
-            <div className="text-sm text-text">ore_a: <CompactNumber value={totalOre.ore_a} compact={shortenNumbers} /> | ore_b: <CompactNumber value={totalOre.ore_b} compact={shortenNumbers} /> | gas: <CompactNumber value={totalOre.gas} compact={shortenNumbers} /> | alloy: <CompactNumber value={totalOre.alloy} compact={shortenNumbers} /></div>
-            <div className="text-sm text-text">Volume: <CompactNumber value={volume} compact={shortenNumbers} /> m³</div>
-          </>
+          <div className="flex flex-wrap gap-x-8 gap-y-2">
+            <div className="space-y-1">
+              <div className="text-sm text-text">ore_a: <CompactNumber value={totalOre.ore_a} compact={shortenNumbers} /> | ore_b: <CompactNumber value={totalOre.ore_b} compact={shortenNumbers} /> | gas: <CompactNumber value={totalOre.gas} compact={shortenNumbers} /> | alloy: <CompactNumber value={totalOre.alloy} compact={shortenNumbers} /></div>
+              <div className="text-sm text-text">Volume: <CompactNumber value={volume} compact={shortenNumbers} /> m³</div>
+            </div>
+            <div className="text-muted text-xs">
+              <div className="mb-1 font-medium text-text">Calculations <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-md border border-border/60 bg-surface/60 text-muted select-none cursor-default font-normal" role="status">Under construction</span></div>
+              <div className="space-y-0.5 text-sm">
+                <div>Laser lenses: <CompactNumber value={lenses} compact={shortenNumbers} /></div>
+                <div>Fuel needed: <CompactNumber value={fuel} compact={shortenNumbers} /></div>
+                <div>Time to mine: <CompactNumber value={timeMine} compact={shortenNumbers} /> s</div>
+                <div>Time to refine: <CompactNumber value={timeRefine} compact={shortenNumbers} /> s</div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
       {useMaterialsPath && (
-        <div className={`${sectionCls} mt-3 py-3 bg-bg rounded-md max-h-[320px] overflow-y-auto`}>
+        <div className={`${sectionCls} mt-3 py-3 bg-bg rounded-md`}>
           <div className="flex items-center justify-between gap-2 mb-2">
             <h3 className={headingCls}>Production graph</h3>
             <HelpLabel content={PRODUCTION_GRAPH_HELP} />
@@ -1680,15 +1868,17 @@ export function BuildPage({
                 </p>
               )}
               {productionView === "tree" ? (
-                <ProductionTreeList
-                  trees={productionTree}
-                  gameData={gameData}
-                  overrides={local.intermediateBlueprintOverrides}
-                  shortenNumbers={shortenNumbers}
-                  onBlueprintOverride={onBlueprintOverride}
-                  filterByFacilities={filterByFacilities}
-                  addedFacilityNames={addedFacilityNames}
-                />
+                <div className="overflow-x-auto overflow-y-visible">
+                  <ProductionTreeList
+                    trees={productionTree}
+                    gameData={gameData}
+                    overrides={local.intermediateBlueprintOverrides}
+                    shortenNumbers={shortenNumbers}
+                    onBlueprintOverride={onBlueprintOverride}
+                    filterByFacilities={filterByFacilities}
+                    addedFacilityNames={addedFacilityNames}
+                  />
+                </div>
               ) : (
                 <ProductionNetworkGraphView
                   graph={productionNetworkGraph}
@@ -1726,14 +1916,6 @@ export function BuildPage({
             <button type="button" className={btnCls} onClick={() => removeLaser(idx)}>Remove</button>
           </div>
         ))}
-      </div>
-
-      <div className={`${sectionCls} mt-3 py-3 bg-bg rounded-md`}>
-        <h3 className={headingCls}>Calculations <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-md border border-border/60 bg-surface/60 text-muted select-none cursor-default font-normal" role="status">Under construction</span></h3>
-        <div className="text-sm text-text">Laser lenses needed: <CompactNumber value={lenses} compact={shortenNumbers} /></div>
-        <div className="text-sm text-text">Fuel needed: <CompactNumber value={fuel} compact={shortenNumbers} /></div>
-        <div className="text-sm text-text">Time to mine: <CompactNumber value={timeMine} compact={shortenNumbers} /> s</div>
-        <div className="text-sm text-text">Time to refine: <CompactNumber value={timeRefine} compact={shortenNumbers} /> s</div>
       </div>
 
       <div className={sectionCls}>
@@ -1783,9 +1965,14 @@ function StarSystemSearch({
 
   const matches = useMemo(() => {
     if (!hasData) return [];
-    if (!query.trim()) return [...starSystems];
-    const q = query.toLowerCase();
-    return starSystems.filter((s) => s.toLowerCase().includes(q));
+    let list: string[];
+    if (!query.trim()) {
+      list = [...starSystems];
+    } else {
+      const q = query.toLowerCase();
+      list = starSystems.filter((s) => s.toLowerCase().includes(q));
+    }
+    return [...new Set(list)];
   }, [starSystems, query, hasData]);
 
   const handleBlur = () => {
@@ -1793,6 +1980,16 @@ function StarSystemSearch({
       setOpen(false);
       if (!hasData && query.trim() !== value) onChange(query.trim());
     }, 150);
+  };
+
+  const pasteFromClipboard = async () => {
+    try {
+      const raw = await navigator.clipboard.readText();
+      const text = parseGamePaste(raw);
+      setQuery(text);
+      onChange(text);
+      setOpen(hasData);
+    } catch {}
   };
 
   const inputCls = "min-w-[200px] px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm focus:outline-none focus:border-muted max-w-full";
@@ -1804,6 +2001,10 @@ function StarSystemSearch({
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(hasData);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          pasteFromClipboard();
         }}
         onFocus={() => setOpen(hasData)}
         onBlur={handleBlur}
@@ -1853,6 +2054,16 @@ function ItemSearch({
     return PRODUCIBLE_ITEMS.filter((s) => s.toLowerCase().includes(q));
   }, [query]);
 
+  const pasteFromClipboard = async () => {
+    try {
+      const raw = await navigator.clipboard.readText();
+      const text = parseGamePaste(raw);
+      setQuery(text);
+      onChange(text);
+      setOpen(true);
+    } catch {}
+  };
+
   return (
     <div className="relative">
       <input
@@ -1861,6 +2072,10 @@ function ItemSearch({
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          pasteFromClipboard();
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -1913,6 +2128,15 @@ function ItemSearchWithTypes({
 
   const hasTypes = Object.keys(types).length > 0;
 
+  const pasteFromClipboard = async () => {
+    try {
+      const raw = await navigator.clipboard.readText();
+      const text = parseGamePaste(raw);
+      setQuery(text);
+      setOpen(true);
+    } catch {}
+  };
+
   return (
     <div className="relative">
       <input
@@ -1921,6 +2145,10 @@ function ItemSearchWithTypes({
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          pasteFromClipboard();
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}

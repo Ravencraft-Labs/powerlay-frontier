@@ -12,6 +12,7 @@ export interface BuilderOverlayState {
   totalOre?: number;
   productionLeftSeconds?: number;
   miningOres?: MiningOreEntry[];
+  plannedVolByTypeId?: Record<number, number>;
 }
 
 export interface EFOverlayAPI {
@@ -20,7 +21,15 @@ export interface EFOverlayAPI {
     update: (id: string, patch: unknown) => Promise<TribeTodo | null>;
   };
   overlay?: {
-    getBuilderState: () => Promise<BuilderOverlayState>;
+    getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
+    toggleLock: (frame: "todo" | "builder", buildId?: string) => Promise<boolean>;
+    setContentSize: (frame: "todo" | "builder", width: number, height: number, buildId?: string) => void;
+    hideBuilder: (buildId: string) => Promise<void>;
+  };
+  mining?: {
+    getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null }>;
+    startTracking: (opts?: { buildId?: string; plannedVolByTypeId?: Record<number, number> }) => Promise<void>;
+    stopTracking: () => Promise<void>;
   };
 }
 

@@ -3,6 +3,7 @@ import type { TribeTodo, BuildPlan, TypesMap, BlueprintsMap } from "@powerlay/co
 export interface GameDataErrors {
   types?: string;
   blueprints?: string;
+  oreGroupIDs?: string;
 }
 
 export interface GameData {
@@ -13,6 +14,8 @@ export interface GameData {
   blueprintToFacilityNames: Record<number, string>;
   /** Facility type names from industry_facilities */
   facilityTypeNames: string[];
+  /** groupIDs for mineable ores. Empty = no filtering. */
+  oreGroupIDs: number[];
   errors?: GameDataErrors;
 }
 
@@ -31,19 +34,21 @@ export interface EFOverlayAPI {
   };
   overlay: {
     toggle: (frame: "todo" | "builder") => Promise<void>;
+    toggleBuilder: (buildId: string) => Promise<void>;
+    getVisibleBuilderIds: () => Promise<string[]>;
     show: (frame: "todo" | "builder") => Promise<void>;
     hide: (frame: "todo" | "builder") => Promise<void>;
-    getLockState: (frame: "todo" | "builder") => Promise<boolean>;
-    toggleLock: (frame: "todo" | "builder") => Promise<boolean>;
-    getBuilderState: () => Promise<{ buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }> }>;
-    setBuilderState: (state: { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }> }) => void;
+    getLockState: (frame: "todo" | "builder", buildId?: string) => Promise<boolean>;
+    toggleLock: (frame: "todo" | "builder", buildId?: string) => Promise<boolean>;
+    getBuilderState: (buildId: string) => Promise<{ buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>;
+    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) => void;
   };
   gameData: {
     get: () => Promise<GameData>;
   };
   mining?: {
     getState: () => Promise<Record<string, Record<number, number>>>;
-    getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean }>;
+    getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null }>;
     setSelectedBuild: (buildId: string | null) => Promise<void>;
     setState: (state: Record<string, Record<number, number>>) => Promise<void>;
     resetBuild: (buildId: string) => Promise<void>;

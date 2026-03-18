@@ -3,6 +3,10 @@ import type { BuilderOverlayState } from "./preload.d";
 import { OverlayFrame } from "./components/OverlayFrame";
 import { useEfOverlay } from "./hooks/useEfOverlay";
 
+interface BuildTrackingOverlayProps {
+  buildId: string | null;
+}
+
 function PlayIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -36,21 +40,21 @@ function formatCompact(n: number): string {
   return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2);
 }
 
-export function BuildTrackingOverlay() {
+export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const api = useEfOverlay();
   const [state, setState] = useState<BuilderOverlayState>({});
-  const [trackingActive, setTrackingActive] = useState(false);
+  const [trackingBuildId, setTrackingBuildId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const getState = api?.overlay?.getBuilderState;
-    if (!getState) return;
+    if (!getState || !buildId) return;
     try {
-      const s = await getState();
+      const s = await getState(buildId);
       setState(s ?? {});
     } catch (err) {
       console.error(err);
     }
-  }, [api?.overlay?.getBuilderState]);
+  }, [api?.overlay?.getBuilderState, buildId]);
 
   useEffect(() => {
     load();
@@ -66,7 +70,7 @@ export function BuildTrackingOverlay() {
     if (!getErrors) return;
     try {
       const err = await getErrors();
-      setTrackingActive(err?.trackingActive ?? false);
+      setTrackingBuildId(err?.trackingBuildId ?? null);
     } catch {
       /* ignore */
     }
@@ -79,12 +83,15 @@ export function BuildTrackingOverlay() {
   }, [loadMiningErrors]);
 
   const handlePlayPause = useCallback(() => {
-    if (trackingActive) {
+    if (trackingBuildId === buildId) {
       api?.mining?.stopTracking?.();
-    } else {
-      api?.mining?.startTracking?.();
+    } else if (buildId) {
+      api?.mining?.startTracking?.({
+        buildId,
+        plannedVolByTypeId: state.plannedVolByTypeId,
+      });
     }
-  }, [trackingActive, api?.mining]);
+  }, [trackingBuildId, api?.mining, buildId, state.plannedVolByTypeId]);
 
   const buildName = state.buildName ?? "—";
   const mined = state.mined ?? 0;
@@ -118,8 +125,27 @@ export function BuildTrackingOverlay() {
     }
   }, [miningOres]);
 
+  if (!buildId) {
+    return (
+      <div className="p-4 text-muted text-sm">No build selected.</div>
+    );
+  }
+
+  const titleWithDot = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="truncate">Build: {buildName}</span>
+      {trackingBuildId === buildId && (
+        <span
+          className="w-2 h-2 rounded-full bg-red-500 shrink-0"
+          title="This build is tracking"
+          aria-hidden
+        />
+      )}
+    </span>
+  );
+
   return (
-    <OverlayFrame title={`Build: ${buildName}`}>
+    <OverlayFrame title={titleWithDot} buildId={buildId}>
       {(locked) => (
       <div className="text-[0.8rem] text-muted space-y-1.5">
         <div className="flex items-center gap-2 mb-1">
@@ -127,18 +153,18 @@ export function BuildTrackingOverlay() {
             <button
               type="button"
               className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors overlay-no-drag ${
-                trackingActive
+                trackingBuildId === buildId
                   ? "text-amber-500 hover:bg-amber-500/20"
                   : "text-green-500 hover:bg-green-500/20"
               }`}
-              title={trackingActive ? "Stop tracking" : "Start tracking"}
+              title={trackingBuildId === buildId ? "Stop tracking" : "Start tracking"}
               onClick={handlePlayPause}
             >
-              {trackingActive ? <PauseIcon /> : <PlayIcon />}
+              {trackingBuildId === buildId ? <PauseIcon /> : <PlayIcon />}
             </button>
           )}
           <span className="text-[0.75rem] text-muted">
-            {trackingActive ? "Tracking" : "Paused"}
+            {trackingBuildId === buildId ? "Tracking" : "Paused"}
           </span>
         </div>
         {totalOre > 0 && (
