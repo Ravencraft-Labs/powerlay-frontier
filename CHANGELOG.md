@@ -9,11 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Wallet login** – "Login wallet" button in the header. Browser-based auth flow using EVE Vault (or other Sui wallets). Opens a local auth page where you connect your wallet; the app stores the session and wallet address for blockchain reads.
+- **App session** – Authenticated state persists across app restarts. Session stored in `userData/Powerlay/session.json`.
+- **Cancel login** – Cancel button while connecting; closing the auth tab no longer leaves the app stuck on "Connecting...".
+- **Blockchain placeholder** – `getWalletAddress()` and `queryUserData()` for future EVE Frontier blockchain integration.
+- **Auth architecture docs** – `docs/auth-architecture.md` explains why wallet login is browser-based and how blockchain reads work after login.
+
 ### Changed
+
+- Auth page uses the app's color scheme and includes a setup guide for installing EVE Vault manually.
+- Auth page polls for wallet detection after F5 refresh; main window focuses when login succeeds.
 
 ### Fixed
 
-- App now closes properly when clicking the window close button (X) or choosing Quit in the tray menu
+- App now closes properly when clicking the window close button (X) or choosing Quit in the tray menu.
+- First-time wallet login no longer fails when closing the auth tab after success (pagehide no longer sends cancel when login completed).
 - **Empty blueprints** – Items with no ingredients (e.g. Heavy Printer) no longer appear as duplicate or empty options. The item search deduplicates by name, prefers producible types, and hides items with no valid recipe. Blueprints without ingredients are filtered at load time and excluded from producible lists.
 
 ---
