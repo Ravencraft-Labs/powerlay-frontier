@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - App now closes properly when clicking the window close button (X) or choosing Quit in the tray menu
+- **Empty blueprints** – Items with no ingredients (e.g. Heavy Printer) no longer appear as duplicate or empty options. The item search deduplicates by name, prefers producible types, and hides items with no valid recipe. Blueprints without ingredients are filtered at load time and excluded from producible lists.
 
 ---
 

@@ -40,9 +40,9 @@ export interface TypeNameEntry {
 export function searchTypesByName(
   types: TypesMap,
   query: string,
-  options: { volumeMin?: number } = {}
+  options: { volumeMin?: number; preferTypeIds?: Set<number> } = {}
 ): TypeNameEntry[] {
-  const { volumeMin = 0 } = options;
+  const { volumeMin = 0, preferTypeIds } = options;
   const q = query.trim().toLowerCase();
   const result: TypeNameEntry[] = [];
   for (const key of Object.keys(types)) {
@@ -52,6 +52,22 @@ export function searchTypesByName(
     if (!q || name.toLowerCase().includes(q)) {
       result.push({ typeID: t.typeID, name });
     }
+  }
+  if (preferTypeIds && result.length > 0) {
+    const byName = new Map<string, TypeNameEntry[]>();
+    for (const m of result) {
+      const key = m.name.toLowerCase();
+      const list = byName.get(key) ?? [];
+      list.push(m);
+      byName.set(key, list);
+    }
+    const deduped: TypeNameEntry[] = [];
+    for (const group of byName.values()) {
+      const preferred = group.find((m) => preferTypeIds.has(m.typeID));
+      if (!preferred) continue; // skip names with no producible type
+      deduped.push(preferred);
+    }
+    return deduped.sort((a, b) => a.name.localeCompare(b.name, "en"));
   }
   return result;
 }
@@ -65,6 +81,7 @@ export function getProducibleTypeIds(
     const bp = blueprints[_key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // only types with ingredients
     for (const p of mfg.products) {
       productTypeIds.add(p.typeID);
     }
@@ -87,6 +104,7 @@ export function getBlueprintForProduct(
     const bp = blueprints[key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // skip blueprints with no ingredients
     const hasProduct = mfg.products.some((p) => p.typeID === productTypeID);
     if (!hasProduct) continue;
     if (bp.blueprintTypeID === productTypeID) return bp;
@@ -95,7 +113,7 @@ export function getBlueprintForProduct(
   return fallback;
 }
 
-/** All blueprints whose manufacturing products include productTypeID. */
+/** All blueprints whose manufacturing products include productTypeID. Excludes blueprints with no ingredients. */
 export function getBlueprintsForProduct(
   productTypeID: number,
   blueprints: BlueprintsMap
@@ -105,6 +123,7 @@ export function getBlueprintsForProduct(
     const bp = blueprints[key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // skip blueprints with no ingredients
     if (mfg.products.some((p) => p.typeID === productTypeID)) result.push(bp);
   }
   return result;
@@ -286,7 +305,8 @@ export function getBlueprintOptionsForProduct(
       _recipeKey: recipeKey(materials),
     };
   });
-  const sorted = withTierAndSum.sort(
+  const withInputs = withTierAndSum.filter((x) => (x.inputTypeIDs?.length ?? 0) > 0);
+  const sorted = withInputs.sort(
     (a, b) => a.tier - b.tier || a.baseOrePerUnit - b.baseOrePerUnit
   );
   const seen = new Set<string>();

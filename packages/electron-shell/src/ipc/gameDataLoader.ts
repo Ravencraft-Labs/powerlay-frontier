@@ -37,12 +37,51 @@ interface IndustryFacilityRaw {
   outputCapacity?: number;
 }
 
+/** Raw entry from data/stripped/structure_recipes.json */
+interface StructureRecipeRaw {
+  constructedItem: number;
+  inputItems: Record<string, number>;
+}
+
+function structureRecipesToBlueprints(
+  raw: Record<string, StructureRecipeRaw>
+): BlueprintsMap {
+  const map: BlueprintsMap = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (!entry?.constructedItem || !entry?.inputItems || typeof entry.inputItems !== "object") continue;
+    const constructedItem = Number(entry.constructedItem);
+    if (!Number.isFinite(constructedItem)) continue;
+    const materials = Object.entries(entry.inputItems)
+      .map(([typeIdStr, qty]) => {
+        const typeID = parseInt(typeIdStr, 10);
+        const quantity = Number(qty);
+        return Number.isFinite(typeID) && Number.isFinite(quantity) && quantity > 0
+          ? { typeID, quantity }
+          : null;
+      })
+      .filter((m): m is { typeID: number; quantity: number } => m != null);
+    if (materials.length === 0) continue;
+    map[key] = {
+      blueprintTypeID: constructedItem,
+      activities: {
+        manufacturing: {
+          materials,
+          products: [{ typeID: constructedItem, quantity: 1 }],
+          time: 0,
+        },
+      },
+    };
+  }
+  return map;
+}
+
 function industryBlueprintsToMap(
   raw: Record<string, IndustryBlueprintRaw>
 ): BlueprintsMap {
   const map: BlueprintsMap = {};
   for (const [key, entry] of Object.entries(raw)) {
     if (!entry?.outputs?.length) continue;
+    if (!entry?.inputs?.length) continue; // skip blueprints with no ingredients
     const blueprintTypeID = Number(key);
     if (!Number.isFinite(blueprintTypeID)) continue;
     map[key] = {
@@ -184,6 +223,13 @@ export async function loadGameData(): Promise<GameData> {
     errors.blueprints = `No blueprints loaded. Tried: ${blueprintsPath}`;
   } else {
     blueprints = industryBlueprintsToMap(blueprintsRawResult.data);
+  }
+
+  const structureRecipesPath = path.join(root, "data", "stripped", "structure_recipes.json");
+  const structureRecipesResult = loadJson<Record<string, StructureRecipeRaw>>(structureRecipesPath);
+  if (!structureRecipesResult.error && Object.keys(structureRecipesResult.data).length > 0) {
+    const structureBlueprints = structureRecipesToBlueprints(structureRecipesResult.data);
+    blueprints = { ...blueprints, ...structureBlueprints };
   }
 
   const starSystems = loadSolarSystems(root);

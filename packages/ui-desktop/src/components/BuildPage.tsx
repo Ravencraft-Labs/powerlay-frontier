@@ -1343,6 +1343,11 @@ export function BuildPage({
     ]
   );
 
+  const producibleTypeIds = useMemo(() => {
+    if (!gameData?.types || !gameData?.blueprints) return undefined;
+    return new Set(getProducibleTypeIds(gameData.types, gameData.blueprints).map((t) => t.typeID));
+  }, [gameData?.types, gameData?.blueprints]);
+
   const baseMaterialsList = useMemo(() => {
     if (productionTree.length === 0 || !gameData?.types) return [];
     return getBaseMaterialsFromTrees(productionTree, gameData.types);
@@ -1691,6 +1696,7 @@ export function BuildPage({
                 <ItemSearchWithTypes
                   types={gameData.types}
                   typeID={p.typeID}
+                  producibleTypeIds={producibleTypeIds}
                   onChange={(typeID) =>
                     updatePlannedItem(idx, {
                       ...p,
@@ -2108,10 +2114,12 @@ function ItemSearchWithTypes({
   types,
   typeID,
   onChange,
+  producibleTypeIds,
 }: {
   types: GameData["types"];
   typeID: number | undefined;
   onChange: (typeID: number) => void;
+  producibleTypeIds?: Set<number>;
 }) {
   const name = typeID != null ? types[String(typeID)]?.name ?? String(typeID) : "";
   const [query, setQuery] = useState(name);
@@ -2122,9 +2130,9 @@ function ItemSearchWithTypes({
   }, [name]);
 
   const matches = useMemo(() => {
-    const all = searchTypesByName(types, query, { volumeMin: 1 });
+    const all = searchTypesByName(types, query, { volumeMin: 1, preferTypeIds: producibleTypeIds });
     return all.slice(0, MAX_ITEM_SEARCH_RESULTS);
-  }, [types, query]);
+  }, [types, query, producibleTypeIds]);
 
   const hasTypes = Object.keys(types).length > 0;
 
