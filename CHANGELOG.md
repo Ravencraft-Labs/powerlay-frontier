@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- App now closes properly when clicking the window close button (X) or choosing Quit in the tray menu
+
 ---
 
 ## [0.1.6] - 2026-03-18

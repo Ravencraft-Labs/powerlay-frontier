@@ -14,6 +14,7 @@ import { checkLogDir, expandPath } from "./log/fileTailer.js";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let isQuitting = false;
 
 type OverlayFrame = "todo" | "builder";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
@@ -193,9 +194,9 @@ function createMainWindow(): void {
     mainWindow.loadFile(desktopUrl);
   }
   mainWindow.on("close", (e) => {
-    if (tray) {
+    if (!isQuitting && tray) {
       e.preventDefault();
-      mainWindow?.hide();
+      app.quit();
     }
   });
   mainWindow.on("closed", () => {
@@ -485,8 +486,12 @@ app.whenReady().then(async () => {
   });
 });
 
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
 app.on("window-all-closed", () => {
-  if (tray) return; // Keep running in tray
+  if (tray && !isQuitting) return; // Keep running in tray
   if (process.platform !== "darwin") app.quit();
 });
 
