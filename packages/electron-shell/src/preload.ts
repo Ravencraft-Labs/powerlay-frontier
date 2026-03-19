@@ -55,5 +55,11 @@ contextBridge.exposeInMainWorld("efOverlay", {
     shouldShowLogPrompt: () => ipcRenderer.invoke("app:should-show-log-prompt"),
     setSkipLogPrompt: () => ipcRenderer.invoke("app:set-skip-log-prompt"),
   },
+  auth: {
+    getSession: () => ipcRenderer.invoke("auth:get-session"),
+    login: () => ipcRenderer.invoke("auth:login"),
+    logout: () => ipcRenderer.invoke("auth:logout"),
+    cancel: () => ipcRenderer.invoke("auth:cancel"),
+  },
   getIconsBaseUrl: () => Promise.resolve("app://icons/"),
 });

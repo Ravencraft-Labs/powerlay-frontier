@@ -6,6 +6,8 @@ import { registerBuildHandlers } from "./ipc/buildHandlers.js";
 import { registerGameDataHandlers } from "./ipc/gameDataHandlers.js";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers.js";
 import { registerMiningHandlers } from "./ipc/miningHandlers.js";
+import { startAuthServer } from "./auth/authServer.js";
+import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -399,6 +401,12 @@ app.whenReady().then(async () => {
   registerGameDataHandlers();
   registerSettingsHandlers();
   registerMiningHandlers();
+
+  const authServer = await startAuthServer();
+  registerAuthHandlers(authServer, () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
 
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();

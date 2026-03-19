@@ -68,6 +68,12 @@ export interface EFOverlayAPI {
     shouldShowLogPrompt: () => Promise<{ show: boolean }>;
     setSkipLogPrompt: () => Promise<void>;
   };
+  auth?: {
+    getSession: () => Promise<{ walletAddress: string; sessionId?: string; expiresAt?: number } | null>;
+    login: () => Promise<{ walletAddress: string } | { error: string }>;
+    logout: () => Promise<void>;
+    cancel: () => Promise<void>;
+  };
   getIconsBaseUrl?: () => Promise<string>;
 }
 
