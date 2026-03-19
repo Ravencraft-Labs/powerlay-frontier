@@ -88,9 +88,49 @@ if (fs.existsSync(solarsystemsInputPath)) {
   console.log("solarsystems.json: skipped (file not found)");
 }
 
+// --- Structure recipes (assemblyConstruction from spacecomponentsbytype) ---
+const spacecomponentsInputPath = path.join(RAW_DIR, "spacecomponentsbytype.json");
+const structureRecipesOutputPath = path.join(OUTPUT_DIR, "structure_recipes.json");
+
+let structureRecipes = {};
+if (fs.existsSync(spacecomponentsInputPath)) {
+  const rawSpacecomponents = JSON.parse(fs.readFileSync(spacecomponentsInputPath, "utf8"));
+  if (rawSpacecomponents && typeof rawSpacecomponents === "object") {
+    for (const key of Object.keys(rawSpacecomponents)) {
+      const entry = rawSpacecomponents[key];
+      const ac = entry?.assemblyConstruction;
+      if (!ac || ac.constructedItem == null || !ac.inputItems || typeof ac.inputItems !== "object") continue;
+      const constructedItem = Number(ac.constructedItem);
+      if (!Number.isFinite(constructedItem)) continue;
+      const inputItems = {};
+      for (const [typeIdStr, qty] of Object.entries(ac.inputItems)) {
+        const typeId = parseInt(typeIdStr, 10);
+        const q = Number(qty);
+        if (Number.isFinite(typeId) && Number.isFinite(q) && q > 0) {
+          inputItems[typeIdStr] = q;
+        }
+      }
+      if (Object.keys(inputItems).length > 0) {
+        structureRecipes[String(constructedItem)] = { constructedItem, inputItems };
+      }
+    }
+  }
+}
+
 // --- Write outputs ---
 if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
+
+if (Object.keys(structureRecipes).length > 0) {
+  fs.writeFileSync(structureRecipesOutputPath, JSON.stringify(structureRecipes, null, 0), "utf8");
+  const srStat = fs.statSync(structureRecipesOutputPath);
+  const srKb = (srStat.size / 1024).toFixed(2);
+  console.log("structure_recipes.json: " + Object.keys(structureRecipes).length + " recipes, " + srKb + " KB");
+} else if (fs.existsSync(spacecomponentsInputPath)) {
+  console.log("structure_recipes.json: 0 recipes (no assemblyConstruction entries found)");
+} else {
+  console.log("structure_recipes.json: skipped (file not found)");
 }
 
 fs.writeFileSync(typesOutputPath, JSON.stringify(strippedTypes, null, 0), "utf8");

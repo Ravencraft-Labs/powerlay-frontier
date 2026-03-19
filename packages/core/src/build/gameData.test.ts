@@ -4,6 +4,8 @@ import {
   getBlueprintOptionsForProduct,
   getOptimizedBlueprintForProduct,
   getMaterialsPerUnitProduct,
+  getProducibleTypeIds,
+  searchTypesByName,
   BASE_ORE_TYPE_IDS,
 } from "./gameData";
 import type { TypesMap, BlueprintsMap } from "./types";
@@ -379,6 +381,51 @@ describe("tiered ore optimization", () => {
     expect(options[0].isOptimized).toBe(true);
     expect(options[1].blueprintTypeID).toBe(202);
     expect(options[1].isOptimized).toBe(false);
+  });
+});
+
+describe("searchTypesByName", () => {
+  it("deduplicates by name preferring producible types when preferTypeIds provided", () => {
+    const types = makeTypes([
+      { typeID: 87120, name: "Heavy Printer" },
+      { typeID: 91702, name: "Heavy Printer" },
+      { typeID: 100, name: "Other" },
+    ]);
+    const preferTypeIds = new Set([87120]);
+    const result = searchTypesByName(types, "heavy printer", { preferTypeIds });
+    expect(result).toHaveLength(1);
+    expect(result[0].typeID).toBe(87120);
+    expect(result[0].name).toBe("Heavy Printer");
+  });
+
+  it("excludes names with no producible type when preferTypeIds provided", () => {
+    const types = makeTypes([
+      { typeID: 1001, name: "Advanced Large Ship Assembly Array" },
+      { typeID: 1002, name: "Thukker Component Assembly Facility" },
+    ]);
+    const preferTypeIds = new Set<number>();
+    const result = searchTypesByName(types, "assembly", { preferTypeIds });
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("getProducibleTypeIds", () => {
+  it("excludes types whose only blueprint has no ingredients", () => {
+    const types = makeTypes([
+      { typeID: 1001, name: "Advanced Large Ship Assembly Array" },
+      { typeID: 1002, name: "Thukker Component Assembly Facility" },
+      { typeID: 87120, name: "Heavy Printer" },
+    ]);
+    const blueprints = makeBlueprints([
+      { blueprintTypeID: 1001, productTypeID: 1001, productQty: 1, materials: [] },
+      { blueprintTypeID: 1002, productTypeID: 1002, productQty: 1, materials: [] },
+      { blueprintTypeID: 87120, productTypeID: 87120, productQty: 1, materials: [{ typeID: 89089, quantity: 100 }] },
+    ]);
+    const result = getProducibleTypeIds(types, blueprints);
+    const names = result.map((r) => r.name);
+    expect(names).not.toContain("Advanced Large Ship Assembly Array");
+    expect(names).not.toContain("Thukker Component Assembly Facility");
+    expect(names).toContain("Heavy Printer");
   });
 });
 
