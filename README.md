@@ -63,3 +63,4 @@ This app does not automate gameplay, read process memory, or inject into the gam
 ## License
 
 [MIT](LICENSE)
+
