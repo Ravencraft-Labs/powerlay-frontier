@@ -26,9 +26,7 @@ The session model keeps auth and blockchain access separate: auth proves identit
 1. User logs in via the browser auth flow
 2. Session is persisted to `userData/Powerlay/session.json`
 3. `getWalletAddress()` (in `blockchain/blockchainReads.ts`) reads from the session store
-4. Future features that need user-specific blockchain data call `getWalletAddress()` and pass it to EVE Frontier GraphQL/RPC
-
-The `queryUserData(walletAddress)` placeholder is the integration point for EVE Frontier APIs.
+4. **Tribe resolution** (`tribeResolve.ts`): When the user is signed in, the app calls `resolvePlayerTribe()`, which uses `queryPlayerTribeFromChain()` (`playerTribeFromChain.ts`): Sui GraphQL **wallet → `PlayerProfile.character_id` → `Character.tribe_id`**, then **`GET /v2/tribes/{id}`** on the Frontier **World API** for display name when enabled. Session stores **`tribeId`** (for **`X-Tribe-Id`**) and optional **`tribeName`** from the API (`name` / `nameShort`).
 
 ## What Must Happen Later for Signed Transactions
 

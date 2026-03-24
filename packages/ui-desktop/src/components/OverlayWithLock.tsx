@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-type OverlayFrame = "todo" | "builder";
+type OverlayFrame = "contracts" | "builder";
 
 function LockClosedIcon({ className }: { className?: string }) {
   return (

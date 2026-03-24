@@ -2,12 +2,14 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, scree
 import path from "path";
 import fs from "fs";
 import { registerTodoHandlers } from "./ipc/todoHandlers.js";
+import { registerContractsHandlers } from "./ipc/contractsHandlers.js";
 import { registerBuildHandlers } from "./ipc/buildHandlers.js";
 import { registerGameDataHandlers } from "./ipc/gameDataHandlers.js";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers.js";
 import { registerMiningHandlers } from "./ipc/miningHandlers.js";
 import { startAuthServer } from "./auth/authServer.js";
 import { registerAuthHandlers } from "./ipc/authHandlers.js";
+import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -18,9 +20,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-type OverlayFrame = "todo" | "builder";
+type OverlayFrame = "contracts" | "builder";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { todo: false, builder: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -52,8 +54,9 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["todo", "builder"] as OverlayFrame[]) {
-      const b = data[f];
+    for (const f of ["contracts", "builder"] as OverlayFrame[]) {
+      let b = data[f];
+      if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
         try {
           const display = screen.getDisplayMatching({ x: b.x!, y: b.y!, width: b.width!, height: b.height! });
@@ -397,6 +400,7 @@ function registerAppProtocol(): void {
 app.whenReady().then(async () => {
   registerAppProtocol();
   registerTodoHandlers();
+  registerContractsHandlers();
   registerBuildHandlers();
   registerGameDataHandlers();
   registerSettingsHandlers();
@@ -407,6 +411,7 @@ app.whenReady().then(async () => {
     mainWindow?.show();
     mainWindow?.focus();
   });
+  registerTribeHandlers();
 
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();
