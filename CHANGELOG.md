@@ -9,22 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Wallet login** – "Login wallet" button in the header. Browser-based auth flow using EVE Vault (or other Sui wallets). Opens a local auth page where you connect your wallet; the app stores the session and wallet address for blockchain reads.
-- **App session** – Authenticated state persists across app restarts. Session stored in `userData/Powerlay/session.json`.
-- **Cancel login** – Cancel button while connecting; closing the auth tab no longer leaves the app stuck on "Connecting...".
-- **Blockchain placeholder** – `getWalletAddress()` and `queryUserData()` for future EVE Frontier blockchain integration.
-- **Auth architecture docs** – `docs/auth-architecture.md` explains why wallet login is browser-based and how blockchain reads work after login.
+- **Contracts** — Browse, join, and hide delivery contracts; save drafts; publish with rewards; pick a star system; limit who can see a job (everyone, your tribe, or your alliance). The overlay can show the same contract list while you play **EVE Frontier**.
+- **Wallet** — Sign in with **EVE Vault** from the header; you stay signed in after closing the app. **Copy address** copies your wallet when you need it.
+- **Tribe** — Tribe-only and alliance-only listings use your Frontier tribe from the chain; status appears in Contracts, and your tribe **name** when the game’s data services provide it. Advanced options live under **Settings → Contracts & tribe**. If your tribe can’t be detected yet, search stays **public-only** until it can.
+- **My contracts** — Your own listings in one place (drafts, published, joined, hidden), with **finish** and **cancel** where the rules allow.
 
 ### Changed
 
-- Auth page uses the app's color scheme and includes a setup guide for installing EVE Vault manually.
-- Auth page polls for wallet detection after F5 refresh; main window focuses when login succeeds.
+- **Items on contracts** — Shorter, easier item list when filling out a job; clearer behavior when an icon is missing or you edit a row again.
 
 ### Fixed
 
-- App now closes properly when clicking the window close button (X) or choosing Quit in the tray menu.
-- First-time wallet login no longer fails when closing the auth tab after success (pagehide no longer sends cancel when login completed).
-- **Empty blueprints** – Items with no ingredients (e.g. Heavy Printer) no longer appear as duplicate or empty options. The item search deduplicates by name, prefers producible types, and hides items with no valid recipe. Blueprints without ingredients are filtered at load time and excluded from producible lists.
+- Clearer messages for contract errors and for jobs you aren’t allowed to open.
+- Quitting from the window or tray always closes the app.
+- Cleaner item lists for unusual blueprints.
+
 
 ---
 
@@ -33,9 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Multiple build overlays** – Open a separate overlay for each build using the eye icon in the sidebar. Each overlay stays on its own build even when you switch between builds in the app.
-- **One build tracks at a time** – When you press Play on a build, any other build’s mining tracking pauses. You can switch which build is tracking from the desktop or from any overlay.
-- **Overlay placement** – New overlays open below the last one, or centered on screen if there’s no room.
-- **Collapsible ingredient tree** – Collapse or expand sections of the production tree. Use “Expand all” or “Collapse all” to quickly show or hide details.
+- **One build tracks at a time** – When you press Play on a build, any other build's mining tracking pauses. You can switch which build is tracking from the desktop or from any overlay.
+- **Overlay placement** – New overlays open below the last one, or centered on screen if there's no room.
+- **Collapsible ingredient tree** – Collapse or expand sections of the production tree. Use "Expand all" or "Collapse all" to quickly show or hide details.
 - **Paste from EVE** – Right‑click paste in Star system and planned items fields. If you copy from the game (e.g. item links), the app extracts the item name for you.
 - **Smarter ore detection** – Mining tracking and overlays now focus on mineable ores (e.g. Feldspar Crystals, Platinum‑Palladium Matrix) and ignore NPC loot (e.g. Rogue Drone Components, Minerals).
 
@@ -44,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Total frame** – Laser lenses, fuel, and time calculations moved to the right of building resources for clearer layout.
 - **Production graph** – Tree connectors and network graph labels are easier to see (thicker lines, better contrast).
 - **Tree list** – No vertical scroll; the list grows with content. Horizontal scroll kept for wide trees.
-- **Blueprint dropdown** – Added a chevron (▼) so it’s clear the field is a dropdown.
+- **Blueprint dropdown** – Added a chevron (▼) so it's clear the field is a dropdown.
 - **Mining materials** – Mining tracking and build overlay now only show ore types, not other materials.
 
 ### Fixed
@@ -64,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - New builds are named "Build #1", "Build #2", etc. by default (next free number).
-- Locked overlays hide all buttons (lock, close, play/pause) so you can’t accidentally click them.
+- Locked overlays hide all buttons (lock, close, play/pause) so you can't accidentally click them.
 - Build overlay still shows "Tracking" or "Paused" when locked; only the button is hidden.
 
 ### Fixed
@@ -97,12 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Build tracking overlay showing production and mining progress.
-- Overlay lock toggle (click-through mode) so the overlay doesn’t block game clicks when locked.
+- Overlay lock toggle (click-through mode) so the overlay doesn't block game clicks when locked.
 - Help labels ("?") on Mining tracking, Production, Total, and Production graph with usage tips.
 
 ### Changed
 
-- Scrollbars styled to match the app’s dark theme.
+- Scrollbars styled to match the app's dark theme.
 
 ### Fixed
 

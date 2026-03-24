@@ -25,6 +25,10 @@ export interface AppSession {
   sessionId?: string;
   /** Unix timestamp; optional for MVP. Future: check on startup. */
   expiresAt?: number;
+  /** Tribe from chain/dev override for X-Tribe-Id. */
+  tribeId?: string;
+  tribeName?: string;
+  tribeResolvedAt?: number;
 }
 
 export function loadSession(): AppSession | null {
@@ -38,6 +42,9 @@ export function loadSession(): AppSession | null {
       walletAddress: data.walletAddress,
       sessionId: data.sessionId,
       expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : undefined,
+      tribeId: typeof data.tribeId === "string" ? data.tribeId : undefined,
+      tribeName: typeof data.tribeName === "string" ? data.tribeName : undefined,
+      tribeResolvedAt: typeof data.tribeResolvedAt === "number" ? data.tribeResolvedAt : undefined,
     };
   } catch {
     return null;

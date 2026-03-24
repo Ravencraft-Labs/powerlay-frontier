@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { TribeTodoSection } from "./components/TribeTodoSection";
+import { ContractsSection } from "./components/contracts/ContractsSection";
 import { BuildMiningSection } from "./components/BuildMiningSection";
 import { SettingsModal, SettingsCogButton } from "./components/SettingsModal";
 import { LogLocateModal } from "./components/LogLocateModal";
 import { AuthProvider } from "./context/AuthContext";
+import { ContractsAccessProvider } from "./context/ContractsAccessContext";
 import { WalletLoginButton } from "./components/WalletLoginButton";
 
-type TabId = "todo" | "builder";
+type TabId = "contracts" | "builder";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("builder");
@@ -22,6 +23,7 @@ export default function App() {
 
   return (
     <AuthProvider>
+      <ContractsAccessProvider>
       <div className="min-h-screen flex flex-col">
         <header className="flex items-center justify-between px-6 py-4 border-b border-border">
           <nav className="flex gap-0 -mb-px">
@@ -40,13 +42,13 @@ export default function App() {
           <button
             type="button"
             className={`px-4 py-2 text-sm font-medium border-b-2 ${
-              activeTab === "todo"
+              activeTab === "contracts"
                 ? "text-selection-text border-selection-bg font-semibold"
                 : "text-muted border-transparent hover:text-text"
             }`}
-            onClick={() => setActiveTab("todo")}
+            onClick={() => setActiveTab("contracts")}
           >
-            TODO
+            Contracts
           </button>
         </nav>
           <div className="flex items-center gap-3">
@@ -60,7 +62,7 @@ export default function App() {
             <BuildMiningSection />
           </div>
         )}
-        {activeTab === "todo" && <TribeTodoSection />}
+        {activeTab === "contracts" && <ContractsSection />}
       </main>
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <LogLocateModal
@@ -68,6 +70,7 @@ export default function App() {
         onClose={() => setShowLogLocateModal(false)}
       />
       </div>
+      </ContractsAccessProvider>
     </AuthProvider>
   );
 }

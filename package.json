@@ -6,6 +6,7 @@
   "scripts": {
     "strip-data": "node scripts/strip-data.js",
     "types-name-id": "node scripts/types-name-id.js",
+    "debug-graphql": "node scripts/debug-ef-graphql.mjs",
     "dev": "concurrently -n d,o,e \"pnpm --filter @powerlay/ui-desktop dev\" \"pnpm --filter @powerlay/ui-overlay dev\" \"wait-on http://localhost:5173 http://localhost:5174 && cross-env DESKTOP_URL=http://localhost:5173 OVERLAY_URL=http://localhost:5174 pnpm --filter @powerlay/electron-shell dev\"",
     "build": "pnpm run -r build",
     "build:portable": "pnpm run build && electron-builder --win portable",

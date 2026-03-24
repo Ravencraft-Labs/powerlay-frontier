@@ -1,4 +1,17 @@
-import type { TribeTodo, BuildPlan, TypesMap, BlueprintsMap } from "@powerlay/core";
+import type {
+  TribeTodo,
+  BuildPlan,
+  TypesMap,
+  BlueprintsMap,
+  ContractBrowseSummary,
+  ContractStats,
+  CreateDraftInput,
+  LogisticsContract,
+  PublishContractResult,
+  SearchContractsParams,
+  UpdateDraftInput,
+} from "@powerlay/core";
+import type { ContractsBackendStatus } from "../services/contracts/contractsClient";
 
 export interface GameDataErrors {
   types?: string;
@@ -19,7 +32,25 @@ export interface GameData {
   errors?: GameDataErrors;
 }
 
+export type OverlayShellFrame = "contracts" | "builder";
+
 export interface EFOverlayAPI {
+  contracts?: {
+    search: (params: SearchContractsParams) => Promise<ContractBrowseSummary[]>;
+    listMyContracts: (bucket?: string) => Promise<ContractBrowseSummary[]>;
+    listDrafts: () => Promise<LogisticsContract[]>;
+    get: (id: string) => Promise<LogisticsContract | null>;
+    createDraft: (input: CreateDraftInput) => Promise<LogisticsContract>;
+    updateDraft: (id: string, patch: UpdateDraftInput) => Promise<LogisticsContract | null>;
+    publish: (id: string) => Promise<PublishContractResult>;
+    hide: (contractId: string) => Promise<boolean>;
+    join: (contractId: string, displayName?: string) => Promise<LogisticsContract | null>;
+    tokenBalance: () => Promise<{ balance: number; reserved: number; available: number }>;
+    stats: () => Promise<ContractStats>;
+    cancel: (contractId: string) => Promise<LogisticsContract | null>;
+    completeContract: (contractId: string) => Promise<LogisticsContract | null>;
+    getBackendStatus: () => Promise<ContractsBackendStatus>;
+  };
   tribeTodo: {
     list: () => Promise<TribeTodo[]>;
     create: (todo: unknown) => Promise<TribeTodo>;
@@ -33,13 +64,15 @@ export interface EFOverlayAPI {
     delete: (id: string) => Promise<boolean>;
   };
   overlay: {
-    toggle: (frame: "todo" | "builder") => Promise<void>;
+    setContentSize?: (frame: OverlayShellFrame, width: number, height: number, buildId?: string) => void;
+    toggle: (frame: OverlayShellFrame) => Promise<void>;
     toggleBuilder: (buildId: string) => Promise<void>;
     getVisibleBuilderIds: () => Promise<string[]>;
-    show: (frame: "todo" | "builder") => Promise<void>;
-    hide: (frame: "todo" | "builder") => Promise<void>;
-    getLockState: (frame: "todo" | "builder", buildId?: string) => Promise<boolean>;
-    toggleLock: (frame: "todo" | "builder", buildId?: string) => Promise<boolean>;
+    show: (frame: OverlayShellFrame) => Promise<void>;
+    hide: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;
+    hideBuilder?: (buildId: string) => Promise<void>;
+    getLockState: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
+    toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     getBuilderState: (buildId: string) => Promise<{ buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>;
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) => void;
   };
@@ -59,8 +92,18 @@ export interface EFOverlayAPI {
     stopTracking: () => Promise<void>;
   };
   settings?: {
-    get: () => Promise<{ gameLogDir?: string; skipLogPrompt?: boolean }>;
-    set: (settings: { gameLogDir?: string; skipLogPrompt?: boolean }) => Promise<void>;
+    get: () => Promise<{
+      gameLogDir?: string;
+      skipLogPrompt?: boolean;
+      efGraphqlUrl?: string;
+      efWorldApiBaseUrl?: string;
+    }>;
+    set: (settings: {
+      gameLogDir?: string;
+      skipLogPrompt?: boolean;
+      efGraphqlUrl?: string;
+      efWorldApiBaseUrl?: string;
+    }) => Promise<void>;
   };
   app?: {
     openLogFolder: () => Promise<string>;
@@ -69,10 +112,13 @@ export interface EFOverlayAPI {
     setSkipLogPrompt: () => Promise<void>;
   };
   auth?: {
-    getSession: () => Promise<{ walletAddress: string; sessionId?: string; expiresAt?: number } | null>;
+    getSession: () => Promise<{ walletAddress: string; sessionId?: string; expiresAt?: number; tribeId?: string; tribeName?: string; tribeResolvedAt?: number } | null>;
     login: () => Promise<{ walletAddress: string } | { error: string }>;
     logout: () => Promise<void>;
     cancel: () => Promise<void>;
+  };
+  tribe?: {
+    resolve: () => Promise<{ ok: boolean; tribeId?: string; tribeName?: string; error?: string }>;
   };
   getIconsBaseUrl?: () => Promise<string>;
 }
