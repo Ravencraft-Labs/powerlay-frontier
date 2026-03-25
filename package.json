@@ -10,6 +10,7 @@
     "dev": "concurrently -n d,o,e \"pnpm --filter @powerlay/ui-desktop dev\" \"pnpm --filter @powerlay/ui-overlay dev\" \"wait-on http://localhost:5173 http://localhost:5174 && cross-env DESKTOP_URL=http://localhost:5173 OVERLAY_URL=http://localhost:5174 pnpm --filter @powerlay/electron-shell dev\"",
     "build": "pnpm run -r build",
     "build:portable": "pnpm run build && electron-builder --win portable",
+    "build:mac": "pnpm run build && electron-builder --mac",
     "test": "pnpm run -r test",
     "lint": "pnpm run -r lint"
   },
@@ -48,6 +49,13 @@
         "portable"
       ],
       "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.utilities"
     }
   },
   "devDependencies": {

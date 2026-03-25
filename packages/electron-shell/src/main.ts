@@ -458,8 +458,12 @@ app.whenReady().then(async () => {
 
   const iconPath = getIconPath();
   if (iconPath) {
-    const icon = nativeImage.createFromPath(iconPath);
+    let icon = nativeImage.createFromPath(iconPath);
     if (!icon.isEmpty()) {
+      if (process.platform === "darwin") {
+        icon = icon.resize({ width: 16, height: 16 });
+        icon.setTemplateImage(true);
+      }
       tray = new Tray(icon);
       tray.setToolTip("Powerlay Frontier");
       tray.on("click", () => {
