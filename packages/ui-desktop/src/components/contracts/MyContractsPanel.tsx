@@ -11,7 +11,7 @@ import type { ContractsClient } from "../../services/contracts/contractsClient";
 import { useContractBackendPoll } from "../../hooks/contracts/useContractBackendPoll";
 import { contractsErrorForUi } from "../../utils/contractsIpcError";
 import { ContractCardRow, sortBrowseSummaries } from "./ContractCardRow";
-import { loadStoredCallsign, saveStoredCallsign, callsignMatchesLine, walletMatches } from "../../utils/contractsUi";
+import { loadStoredCallsign, saveStoredCallsign, callsignMatchesLine, walletMatches, loadAutoRefreshIds, saveAutoRefreshIds } from "../../utils/contractsUi";
 import { formatWithThousandsSeparator } from "../../utils/format";
 import { useAuth } from "../../context/AuthContext";
 import { DemoModal } from "../DemoModal";
@@ -60,7 +60,7 @@ export function MyContractsPanel({ client, onRefreshBalance }: MyContractsPanelP
   const [detailErrorById, setDetailErrorById] = useState<Record<string, string>>({});
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [callsign, setCallsign] = useState(loadStoredCallsign);
-  const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(() => new Set());
+  const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(loadAutoRefreshIds);
 
   const setCallsignPersist = (v: string) => {
     setCallsign(v);
@@ -141,6 +141,7 @@ export function MyContractsPanel({ client, onRefreshBalance }: MyContractsPanelP
       const next = new Set(prev);
       if (on) next.add(id);
       else next.delete(id);
+      saveAutoRefreshIds(next);
       return next;
     });
   };
@@ -163,6 +164,7 @@ export function MyContractsPanel({ client, onRefreshBalance }: MyContractsPanelP
     setBanner(null);
     try {
       await client.completeContract(id);
+      toggleAutoRefresh(id, false);
       await load();
       onRefreshBalance?.();
     } catch (e) {
@@ -185,6 +187,7 @@ export function MyContractsPanel({ client, onRefreshBalance }: MyContractsPanelP
     setBanner(null);
     try {
       await client.cancel(id);
+      toggleAutoRefresh(id, false);
       await load();
       onRefreshBalance?.();
     } catch (e) {

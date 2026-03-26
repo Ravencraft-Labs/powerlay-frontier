@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { ContractBrowseSummary, ContractVisibility, SearchContractsParams } from "@powerlay/core";
 import { contractProgressPercent, contractRewardCapTokens, contractRewardProgressTokens } from "@powerlay/core";
 import type { ContractsClient } from "../../services/contracts/contractsClient";
-import { loadStoredCallsign, saveStoredCallsign, callsignMatchesLine } from "../../utils/contractsUi";
+import { loadStoredCallsign, saveStoredCallsign, callsignMatchesLine, loadAutoRefreshIds, saveAutoRefreshIds } from "../../utils/contractsUi";
 import { contractsErrorForUi } from "../../utils/contractsIpcError";
 import { useAuth } from "../../context/AuthContext";
 import { useContractsAccess } from "../../context/ContractsAccessContext";
@@ -37,7 +37,7 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
   const [detailById, setDetailById] = useState<Record<string, ContractBrowseSummary["contract"]>>({});
   /** Error when fetching detail (e.g. CONTRACT_NOT_VISIBLE). */
   const [detailErrorById, setDetailErrorById] = useState<Record<string, string>>({});
-  const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(() => new Set());
+  const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(loadAutoRefreshIds);
   const userSelectedVisibility = useMemo((): ContractVisibility[] => {
     const v: ContractVisibility[] = [];
     if (visTribe) v.push("tribe");
@@ -119,6 +119,7 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
       const next = new Set(prev);
       if (on) next.add(id);
       else next.delete(id);
+      saveAutoRefreshIds(next);
       return next;
     });
   };

@@ -165,7 +165,7 @@ export function ContractExpandedDetails({
             checked={autoRefresh === true}
             onChange={(e) => onAutoRefreshToggle?.(e.target.checked)}
           />
-          <span>Live refresh — auto-poll contract progress every 15 s (this device only).</span>
+          <span>Live refresh — auto-poll contract progress every 1 s (this device only).</span>
         </label>
       )}
 
