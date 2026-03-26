@@ -63,12 +63,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
   },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
-    set: (settings: {
-      gameLogDir?: string;
-      skipLogPrompt?: boolean;
-      efGraphqlUrl?: string;
-      efWorldApiBaseUrl?: string;
-    }) => ipcRenderer.invoke("settings:set", settings),
+    set: (settings: { gameLogDir?: string; skipLogPrompt?: boolean }) =>
+      ipcRenderer.invoke("settings:set", settings),
   },
   app: {
     openLogFolder: () => ipcRenderer.invoke("app:open-log-folder"),

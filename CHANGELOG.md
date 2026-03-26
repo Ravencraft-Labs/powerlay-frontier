@@ -11,11 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Contracts** — Browse, join, and hide delivery contracts; save drafts; publish with rewards; pick a star system; limit who can see a job (everyone, your tribe, or your alliance). The overlay can show the same contract list while you play **EVE Frontier**.
 - **Wallet** — Sign in with **EVE Vault** from the header; you stay signed in after closing the app. **Copy address** copies your wallet when you need it.
-- **Tribe** — Tribe-only and alliance-only listings use your Frontier tribe from the chain; status appears in Contracts, and your tribe **name** when the game’s data services provide it. Advanced options live under **Settings → Contracts & tribe**. If your tribe can’t be detected yet, search stays **public-only** until it can.
+- **Tribe** — Tribe-only and alliance-only listings use your Frontier tribe from the chain; status appears in Contracts, and your tribe **name** when the game’s data services provide it. Shard URLs are inferred from your on-chain profile (no GraphQL / World API fields in Settings). If your tribe can’t be detected yet, search stays **public-only** until it can. Contracts shows a short note when CCP infrastructure or on-chain layout changes may need an app update.
 - **My contracts** — Your own listings in one place (drafts, published, joined, hidden), with **finish** and **cancel** where the rules allow.
 
 ### Changed
 
+- **Settings** — Removed **Contracts & tribe** URL overrides; tribe resolution uses the built-in GraphQL default and World API hosts mapped from the `PlayerProfile` package (env overrides documented in `docs/contracts-integration.md`).
 - **Items on contracts** — Shorter, easier item list when filling out a job; clearer behavior when an icon is missing or you edit a row again.
 
 ### Fixed

@@ -105,7 +105,7 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
     setPublishError(null);
     try {
       if (!editingId && !targetSsuId.trim()) {
-        setPublishError("Target SSU ID is required.");
+        setPublishError("Target storage ID is required.");
         return;
       }
       const payloadLines = normalizedLines();
@@ -154,7 +154,7 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
         return;
       }
       if (!targetSsuId.trim()) {
-        setPublishError("Target SSU ID is required.");
+        setPublishError("Target storage ID is required.");
         return;
       }
       let id = editingId;
@@ -289,8 +289,8 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
           </datalist>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Target SSU ID</span>
-          <input className={inputCls} value={targetSsuId} onChange={(e) => setTargetSsuId(e.target.value)} placeholder="Smart Storage ID" />
+          <span className="text-muted">Target storage ID</span>
+          <input className={inputCls} value={targetSsuId} onChange={(e) => setTargetSsuId(e.target.value)} placeholder="Storage unit identifier" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Visibility</span>

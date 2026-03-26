@@ -49,18 +49,19 @@ Without these files, the Builder tab will show a "Types loaded but empty" or "Fi
 
 - **`pnpm dev`** — Start desktop UI (Vite :5173), overlay UI (Vite :5174), then Electron. Use "Toggle overlay" in the desktop to show/hide the overlay.
 - **`pnpm build`** — Build all packages.
-- **`pnpm build:portable`** — Build all packages and produce a Windows portable executable (no installer). Output is in `dist/`.
+- **`pnpm run build:portable`** — Build all packages and produce a Windows portable executable (no installer). Output is in `dist/`.
+- **`pnpm run build:mac`** — Build Mac package. Output is in `dist/`.
 - **`pnpm test`** — Run tests (core package).
 - **`pnpm lint`** — Lint all packages.
 - **`pnpm strip-data`** — Generate `data/stripped/types.json`, `data/stripped/oreGroupIDs.json`, and optionally `data/stripped/solarsystems.json` and `data/stripped/structure_recipes.json` from `data/raw/`. Requires `types.json` and `groups.json`. Run after placing fresh game data. See `data/raw/README.md` for full schema and file details.
-- **`pnpm debug-graphql`** — List owned objects and print resolved **`tribe_id`** (EVE `PlayerProfile` → `Character`) via official Sui GraphQL (`pnpm debug-graphql -- <address> [url]`). Use **Copy address** in the header. See `docs/contracts-integration.md`.
+- **`pnpm debug-graphql`** — Inspect GraphQL + optional `chainIdentifier` / Frontier package checks; resolves **`tribe_id`** like the app (`PlayerProfile` → `Character`, profile pick Utopia → Stillness → first). `pnpm debug-graphql -- <address> [url]`. Optional **`POWERLAY_EF_WORLD_API_BASE`** mirrors the app’s operator override for World API. See `docs/contracts-integration.md`.
 
 ## Structure
 
 - `packages/core` — Pure logic (mining/build engine, contracts domain types, Tribe TODO helpers). No Electron/React.
 - `packages/ui-desktop` — Main dashboard (Contracts, Builder, wallet login).
 - `packages/ui-overlay` — Transparent overlay panel (contracts quick list, build tracking).
-- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure via env as in `docs/contracts-integration.md` (do not publish production URLs in public docs). Tribe id comes from Sui GraphQL; an **optional** HTTP lookup can fill tribe **display name** — variable names and defaults live in source / the same doc overview.
+- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure via env as in `docs/contracts-integration.md` (do not publish production URLs in public docs). **Tribe:** on-chain **`Character.tribe_id`** via Sui GraphQL (default indexer + optional **`POWERLAY_EF_GRAPHQL_URL`**); Frontier **World API** for display name follows the profile’s world package — see `docs/contracts-integration.md`.
 
 ## Safe Overlay Philosophy
 

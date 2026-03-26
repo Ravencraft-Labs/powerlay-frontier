@@ -18,9 +18,12 @@ export interface TokenBalanceView {
   available: number;
 }
 
-export type ContractsBackendStatus =
-  | { mode: "mock"; connected: true }
-  | { mode: "http"; connected: boolean; message?: string; apiBase: string };
+export type ContractsBackendStatus = {
+  mode: "http";
+  connected: boolean;
+  message?: string;
+  apiBase: string;
+};
 
 export interface ContractsClient {
   search(params: SearchContractsParams): Promise<ContractBrowseSummary[]>;

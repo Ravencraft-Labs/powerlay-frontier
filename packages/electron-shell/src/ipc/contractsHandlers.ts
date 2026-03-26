@@ -5,14 +5,11 @@ import type {
   SearchContractsParams,
   UpdateDraftInput,
 } from "@powerlay/core";
-import { getContractsApiBaseUrl, useContractsMock } from "../contracts/contractsApiConfig.js";
+import { getContractsApiBaseUrl } from "../contracts/contractsApiConfig.js";
 import { getContractsHttpBackend, type ContractsHttpBackend } from "../contracts/contractsHttpBackend.js";
-import { getContractsStore } from "./contractsStore.js";
 
-type ContractsService = ReturnType<typeof getContractsStore> | ContractsHttpBackend;
-
-function getContractsService(): ContractsService {
-  return useContractsMock() ? getContractsStore() : getContractsHttpBackend();
+function getContractsService(): ContractsHttpBackend {
+  return getContractsHttpBackend();
 }
 
 export function registerContractsHandlers(): void {
@@ -129,9 +126,6 @@ export function registerContractsHandlers(): void {
   });
 
   ipcMain.handle("contracts:backend-status", async () => {
-    if (useContractsMock()) {
-      return { mode: "mock" as const, connected: true as const };
-    }
     const ping = await getContractsHttpBackend().pingReachability();
     return {
       mode: "http" as const,

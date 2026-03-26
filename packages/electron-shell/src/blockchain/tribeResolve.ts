@@ -5,7 +5,7 @@ import { loadSession, saveSession } from "../auth/sessionStore.js";
 import { queryPlayerTribeFromChain } from "./playerTribeFromChain.js";
 
 const TRIBE_LOOKUP_FAILED =
-  "We couldn't determine your tribe for this wallet. Only public contracts are shown in search. Try another wallet, or set the correct Sui GraphQL endpoint under Settings → Contracts & tribe.";
+  "We couldn't determine your tribe for this wallet. Only public contracts are shown in search. Try another wallet, or sign in with the one linked to your Frontier character. If CCP changed indexer URLs or on-chain layout, report it so we can update the app.";
 
 export interface TribeResolveResult {
   ok: boolean;

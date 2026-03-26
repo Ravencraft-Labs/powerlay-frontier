@@ -65,6 +65,10 @@ export interface BackendContractListRow {
   participant_count: number;
   item_count: number;
   resource_summary: string[];
+  /** When true, backend/watcher may update progress from SSU-targeted events (optional API field). */
+  track_ssu_auto?: boolean | null;
+  /** Alias some backends may use instead of `track_ssu_auto`. */
+  ssu_tracking_enabled?: boolean | null;
   /** When present (some API versions), avoids scanning unrelated contracts for “my contracts”. */
   creator_user_id?: string | null;
   creator_wallet_address?: string | null;
@@ -101,6 +105,9 @@ export interface BackendContractDetail {
   created_at: string;
   updated_at: string;
   progress_percent: string | number;
+  /** When true, backend/watcher may update progress from SSU-targeted events (optional API field). */
+  track_ssu_auto?: boolean | null;
+  ssu_tracking_enabled?: boolean | null;
   items: BackendContractItem[];
   participants: BackendParticipant[];
 }

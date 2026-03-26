@@ -95,15 +95,8 @@ export interface EFOverlayAPI {
     get: () => Promise<{
       gameLogDir?: string;
       skipLogPrompt?: boolean;
-      efGraphqlUrl?: string;
-      efWorldApiBaseUrl?: string;
     }>;
-    set: (settings: {
-      gameLogDir?: string;
-      skipLogPrompt?: boolean;
-      efGraphqlUrl?: string;
-      efWorldApiBaseUrl?: string;
-    }) => Promise<void>;
+    set: (settings: { gameLogDir?: string; skipLogPrompt?: boolean }) => Promise<void>;
   };
   app?: {
     openLogFolder: () => Promise<string>;

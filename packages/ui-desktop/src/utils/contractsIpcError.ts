@@ -4,16 +4,16 @@
  */
 
 /** Electron may wrap IPC failures so `error.message` is not pure JSON; extract `{...}` if needed. */
-function tryParseContractsPayload(raw: string): { message?: string; code?: string } | null {
+function tryParseContractsPayload(raw: string): { message?: string; code?: string; httpStatus?: number } | null {
   const s = raw.trim();
   try {
-    return JSON.parse(s) as { message?: string; code?: string };
+    return JSON.parse(s) as { message?: string; code?: string; httpStatus?: number };
   } catch {
     const start = s.indexOf("{");
     const end = s.lastIndexOf("}");
     if (start >= 0 && end > start) {
       try {
-        return JSON.parse(s.slice(start, end + 1)) as { message?: string; code?: string };
+        return JSON.parse(s.slice(start, end + 1)) as { message?: string; code?: string; httpStatus?: number };
       } catch {
         return null;
       }
@@ -50,6 +50,9 @@ export function contractsErrorForUi(e: unknown, authHint = "Sign in with your wa
       };
     }
     let text = j.message ?? "Request failed.";
+    if (typeof j.httpStatus === "number" && text.length < 200) {
+      text = `${text} (HTTP ${j.httpStatus})`;
+    }
     if (text.includes("Traceback") || text.length > 400) {
       text =
         j.code && j.code !== "UNKNOWN"

@@ -61,7 +61,7 @@ function humanizeReachabilityError(err: unknown): string {
   }
   const code = errnoFromUnknown(err);
   if (code === "ECONNREFUSED") {
-    return "Cannot connect to the Powerlay backend (connection refused). Start the API server or set POWERLAY_CONTRACTS_USE_MOCK=true for the offline mock.";
+    return "Cannot connect to the Powerlay backend (connection refused). Start the API server.";
   }
   if (code === "ENOTFOUND") {
     return "Cannot resolve the Powerlay backend host. Check POWERLAY_CONTRACTS_API_BASE.";
@@ -471,6 +471,7 @@ export class ContractsHttpBackend {
       description: patch.description !== undefined ? patch.description : current.description,
       targetStarSystem: patch.targetStarSystem ?? current.targetStarSystem,
       targetSsuId: patch.targetSsuId ?? current.targetSsuId,
+      trackSsuAuto: patch.trackSsuAuto !== undefined ? patch.trackSsuAuto : (current.trackSsuAuto ?? false),
       visibility: patch.visibility ?? current.visibility,
       priority: patch.priority ?? current.priority,
       lines,

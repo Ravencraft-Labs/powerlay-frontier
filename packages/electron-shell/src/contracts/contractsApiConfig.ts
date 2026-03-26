@@ -9,12 +9,6 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** When true, IPC uses the in-memory mock store instead of HTTP. */
-export function useContractsMock(): boolean {
-  const v = process.env.POWERLAY_CONTRACTS_USE_MOCK?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
 /** API base including `/api/v1` prefix (no trailing slash). */
 export function getContractsApiBaseUrl(): string {
   const raw = process.env.POWERLAY_CONTRACTS_API_BASE?.trim();

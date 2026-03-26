@@ -38,6 +38,17 @@ function mapPriority(raw: string | null | undefined): ContractPriority {
   return "medium";
 }
 
+/** Backend may send `track_ssu_auto` or `ssu_tracking_enabled` (optional). */
+function readTrackSsuAuto(
+  d: BackendContractDetail | BackendContractListRow
+): boolean | undefined {
+  const a = d.track_ssu_auto;
+  const b = d.ssu_tracking_enabled;
+  if (typeof a === "boolean") return a;
+  if (typeof b === "boolean") return b;
+  return undefined;
+}
+
 function mapStatus(raw: string | undefined): ContractLifecycleStatus {
   const s = (raw ?? "draft").toLowerCase().replace(/-/g, "_");
   if (s === "in_progress") return "in_progress";
@@ -78,12 +89,14 @@ function mapParticipant(p: BackendParticipant, idx: number): ContractParticipant
 export function mapContractDetailToLogistics(d: BackendContractDetail): LogisticsContract {
   const createdAt = Date.parse(d.created_at) || 0;
   const updatedAt = Date.parse(d.updated_at) || createdAt;
+  const track = readTrackSsuAuto(d);
   return {
     id: String(d.id),
     title: d.title,
     description: d.description ?? undefined,
     targetStarSystem: d.target_star_system || d.target_system_name,
     targetSsuId: d.target_ssu_id,
+    ...(track !== undefined ? { trackSsuAuto: track } : {}),
     visibility: mapVisibility(d.visibility ?? d.visibility_scope),
     priority: mapPriority(d.priority),
     status: mapStatus(d.status),
@@ -131,12 +144,14 @@ export function listRowCreatorMatch(
 
 export function mapListRowToBrowseSummary(row: BackendContractListRow): ContractBrowseSummary {
   const createdAt = Date.parse(row.created_at) || 0;
+  const track = readTrackSsuAuto(row);
   const contract: LogisticsContract = {
     id: String(row.id),
     title: row.title,
     description: row.description ?? undefined,
     targetStarSystem: row.target_star_system || row.target_system_name,
     targetSsuId: row.target_ssu_id,
+    ...(track !== undefined ? { trackSsuAuto: track } : {}),
     visibility: mapVisibility(row.visibility ?? row.visibility_scope),
     priority: mapPriority(row.priority),
     status: mapStatus(row.status),

@@ -75,14 +75,6 @@ export function ContractsAccessProvider({ children }: { children: React.ReactNod
     refreshTribe();
   }, [session?.walletAddress, refreshTribe]);
 
-  useEffect(() => {
-    const onSettingsSaved = () => {
-      if (session?.walletAddress) void refreshTribe();
-    };
-    window.addEventListener("powerlay:settings-saved", onSettingsSaved);
-    return () => window.removeEventListener("powerlay:settings-saved", onSettingsSaved);
-  }, [session?.walletAddress, refreshTribe]);
-
   const allowTribeScopes = status === "ready" && !!tribeId;
 
   const buildSearchVisibility = useCallback(

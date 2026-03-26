@@ -7,6 +7,7 @@ import { ItemIcon } from "../ItemIcon";
 
 export interface ContractExpandedDetailsProps {
   summary: ContractBrowseSummary;
+  mode: "participant" | "creator";
   callsign: string;
   userWallet: string | null;
   isParticipant: boolean;
@@ -14,10 +15,20 @@ export interface ContractExpandedDetailsProps {
   onJoin: () => void;
   onHide: () => void;
   joining: boolean;
+  canFinish?: boolean;
+  canCancel?: boolean;
+  onFinish?: () => void;
+  onCancel?: () => void;
+  onStatistics?: () => void;
+  actionBusy?: boolean;
+  /** UI-only: whether this contract is set to auto-refresh in the app (not a backend state). */
+  autoRefresh?: boolean;
+  onAutoRefreshToggle?: (next: boolean) => void;
 }
 
 export function ContractExpandedDetails({
   summary,
+  mode,
   callsign,
   userWallet,
   isParticipant,
@@ -25,10 +36,25 @@ export function ContractExpandedDetails({
   onJoin,
   onHide,
   joining,
+  canFinish,
+  canCancel,
+  onFinish,
+  onCancel,
+  onStatistics,
+  actionBusy,
+  autoRefresh,
+  onAutoRefreshToggle,
 }: ContractExpandedDetailsProps) {
   const { contract: c, progressPercent, rewardProgressTokens, rewardCapTokens } = summary;
   const btnCls =
     "cursor-pointer px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface";
+  const primaryCls =
+    "cursor-pointer px-3 py-1.5 rounded-md border border-selection-bg bg-selection-bg text-selection-text text-sm disabled:opacity-50 disabled:cursor-not-allowed";
+  const dangerCls =
+    "cursor-pointer px-3 py-1.5 rounded-md border border-destructive/50 bg-destructive/10 text-destructive text-sm hover:bg-destructive/20 disabled:opacity-50 disabled:cursor-not-allowed";
+  const active = c.status === "published" || c.status === "in_progress";
+  const ssu = c.targetSsuId?.trim() ?? "";
+  const showAutoRefresh = ssu.length > 0 && active && !!onAutoRefreshToggle;
 
   return (
     <div className="mt-3 pl-3 border-l-2 border-border space-y-3 text-sm">
@@ -37,11 +63,16 @@ export function ContractExpandedDetails({
           System <span className="text-text">{c.targetStarSystem}</span>
         </span>
         <span>
-          SSU <span className="text-text font-mono">{c.targetSsuId}</span>
+          SSU ID <span className="text-text font-mono">{ssu || "—"}</span>
         </span>
         <span>
           State <span className="text-text">{statusLabel(c.status)}</span>
         </span>
+        {active && ssu && autoRefresh && (
+          <span className="text-[0.65rem] px-1.5 py-0.5 rounded border border-accent/40 bg-accent/10 text-accent">
+            Live refresh on
+          </span>
+        )}
       </div>
       {c.description && <p className="text-muted text-xs m-0">{c.description}</p>}
 
@@ -112,7 +143,7 @@ export function ContractExpandedDetails({
         )}
       </div>
 
-      {(assigneeMatch || !callsign.trim()) && (
+      {mode === "participant" && (assigneeMatch || !callsign.trim()) && (
         <p className="text-[0.7rem] text-muted m-0">
           {assigneeMatch
             ? "Your callsign matches an assignee on this contract — you can accept to join the run."
@@ -120,14 +151,58 @@ export function ContractExpandedDetails({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className={btnCls} disabled={joining || isParticipant || c.status === "completed" || c.status === "canceled"} onClick={onJoin}>
-          {isParticipant ? "Joined" : assigneeMatch ? "Accept / join" : "Join"}
-        </button>
-        <button type="button" className={btnCls} onClick={onHide}>
-          Hide from my list
-        </button>
-      </div>
+      {mode === "creator" && (
+        <p className="text-[0.7rem] text-muted m-0">
+          You created this contract. Use Finish after delivery, or Cancel only when nothing was delivered.
+        </p>
+      )}
+
+      {showAutoRefresh && (
+        <label className="flex flex-row items-start gap-2 text-xs text-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="rounded border-border-input mt-0.5 shrink-0"
+            checked={autoRefresh === true}
+            onChange={(e) => onAutoRefreshToggle?.(e.target.checked)}
+          />
+          <span>Live refresh — auto-poll contract progress every 15 s (this device only).</span>
+        </label>
+      )}
+
+      {mode === "participant" && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btnCls} disabled={joining || isParticipant || c.status === "completed" || c.status === "canceled"} onClick={onJoin}>
+              {isParticipant ? "Joined" : assigneeMatch ? "Accept / join" : "Join"}
+            </button>
+            <button type="button" className={btnCls} onClick={onHide}>
+              Hide from my list
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "creator" && (
+        <div className="flex flex-col gap-3 pt-1 border-t border-border/60">
+          <div className="flex flex-wrap gap-2">
+            {onStatistics && (
+              <button type="button" className={btnCls} onClick={onStatistics}>
+                Statistics
+              </button>
+            )}
+            {canFinish && onFinish && (
+              <button type="button" className={primaryCls} disabled={actionBusy} onClick={onFinish}>
+                {actionBusy ? "Working…" : "Finish contract"}
+              </button>
+            )}
+            {canCancel && onCancel && (
+              <button type="button" className={dangerCls} disabled={actionBusy} onClick={onCancel}>
+                {actionBusy ? "Working…" : "Cancel listing"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

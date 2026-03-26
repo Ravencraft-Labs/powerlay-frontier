@@ -7,6 +7,7 @@ import { contractsErrorForUi } from "../../utils/contractsIpcError";
 import { useAuth } from "../../context/AuthContext";
 import { useContractsAccess } from "../../context/ContractsAccessContext";
 import { ContractCardRow, sortBrowseSummaries } from "./ContractCardRow";
+import { useContractBackendPoll } from "../../hooks/contracts/useContractBackendPoll";
 
 const inputCls =
   "px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm focus:outline-none focus:border-muted";
@@ -36,7 +37,7 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
   const [detailById, setDetailById] = useState<Record<string, ContractBrowseSummary["contract"]>>({});
   /** Error when fetching detail (e.g. CONTRACT_NOT_VISIBLE). */
   const [detailErrorById, setDetailErrorById] = useState<Record<string, string>>({});
-
+  const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(() => new Set());
   const userSelectedVisibility = useMemo((): ContractVisibility[] => {
     const v: ContractVisibility[] = [];
     if (visTribe) v.push("tribe");
@@ -98,6 +99,29 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const expandedContract = expandedId
+    ? detailById[expandedId] ?? list.find((x) => x.contract.id === expandedId)?.contract
+    : null;
+  const pollExpandedDetail =
+    !!expandedId &&
+    !!expandedContract &&
+    (expandedContract.status === "published" || expandedContract.status === "in_progress") &&
+    !!expandedContract.targetSsuId?.trim() &&
+    autoRefreshIds.has(expandedId);
+
+  useContractBackendPoll(client, expandedId, pollExpandedDetail, (c) => {
+    setDetailById((prev) => ({ ...prev, [c.id]: c }));
+  });
+
+  const toggleAutoRefresh = (id: string, on: boolean) => {
+    setAutoRefreshIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
 
   const setCallsignPersist = (v: string) => {
     setCallsign(v);
@@ -200,7 +224,11 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
         <span className="font-medium text-text">Visibility</span>
         <label
           className={`inline-flex items-center gap-1.5 ${!allowTribeScopes ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
-          title={!allowTribeScopes ? "Tribe requires a successful tribe lookup — sign in with your wallet and check Settings → Contracts & tribe (Sui GraphQL)" : undefined}
+          title={
+            !allowTribeScopes
+              ? "Tribe requires a successful tribe lookup — sign in with the wallet linked to your Frontier character"
+              : undefined
+          }
         >
           <input
             type="checkbox"
@@ -216,7 +244,7 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
         </label>
         <label
           className={`inline-flex items-center gap-1.5 ${!allowTribeScopes ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
-          title={!allowTribeScopes ? "Alliance uses the same tribe access as Tribe — resolve tribe first (Settings → Contracts & tribe)" : undefined}
+          title={!allowTribeScopes ? "Alliance uses the same tribe access as Tribe — resolve tribe first (wallet + chain lookup)" : undefined}
         >
           <input
             type="checkbox"
@@ -248,6 +276,8 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
               joining={joiningId === summary.contract.id}
               assigneeMatch={assigneeMatchFor(summary.contract.id)}
               detailError={detailErrorById[summary.contract.id]}
+              autoRefresh={autoRefreshIds.has(summary.contract.id)}
+              onAutoRefreshToggle={(next) => toggleAutoRefresh(summary.contract.id, next)}
             />
           ))}
         </ul>

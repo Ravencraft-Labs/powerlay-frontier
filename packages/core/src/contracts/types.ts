@@ -34,6 +34,12 @@ export interface LogisticsContract {
   description?: string;
   targetStarSystem: string;
   targetSsuId: string;
+  /**
+   * When true, a backend watcher (separate service) may update progress from SSU events; the app only
+   * polls GET /contracts/{id} — it never ingests raw chain events. Maps to `track_ssu_auto` (or
+   * `ssu_tracking_enabled`) on the API when present.
+   */
+  trackSsuAuto?: boolean;
   visibility: ContractVisibility;
   priority: ContractPriority;
   status: ContractLifecycleStatus;
@@ -68,6 +74,8 @@ export interface CreateDraftInput {
   description?: string;
   targetStarSystem: string;
   targetSsuId: string;
+  /** Optional; default false when omitted. */
+  trackSsuAuto?: boolean;
   visibility: ContractVisibility;
   priority: ContractPriority;
   lines: ContractLineDraftInput[];
@@ -79,6 +87,7 @@ export interface UpdateDraftInput {
   description?: string;
   targetStarSystem?: string;
   targetSsuId?: string;
+  trackSsuAuto?: boolean;
   visibility?: ContractVisibility;
   priority?: ContractPriority;
   lines?: ContractLineDraftInput[];

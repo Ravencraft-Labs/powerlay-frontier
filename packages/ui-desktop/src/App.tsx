@@ -1,25 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { ContractsSection } from "./components/contracts/ContractsSection";
 import { BuildMiningSection } from "./components/BuildMiningSection";
+import { ScoutSection } from "./components/ScoutSection";
 import { SettingsModal, SettingsCogButton } from "./components/SettingsModal";
 import { LogLocateModal } from "./components/LogLocateModal";
 import { AuthProvider } from "./context/AuthContext";
 import { ContractsAccessProvider } from "./context/ContractsAccessContext";
 import { WalletLoginButton } from "./components/WalletLoginButton";
 
-type TabId = "contracts" | "builder";
+type TabId = "contracts" | "builder" | "scout";
 
 const TAB_LABELS: Record<TabId, string> = {
   contracts: "Contracts",
   builder: "Builder",
+  scout: "Scout",
 };
 
-const DEFAULT_TAB_ORDER: TabId[] = ["contracts", "builder"];
+const DEFAULT_TAB_ORDER: TabId[] = ["contracts", "builder", "scout"];
 const STORAGE_ORDER_KEY = "powerlay:main-tab-order";
 const STORAGE_ACTIVE_KEY = "powerlay:main-active-tab";
 
 function isTabId(x: unknown): x is TabId {
-  return x === "contracts" || x === "builder";
+  return x === "contracts" || x === "builder" || x === "scout";
 }
 
 function loadTabOrder(): TabId[] {
@@ -28,11 +30,23 @@ function loadTabOrder(): TabId[] {
     if (!raw) return [...DEFAULT_TAB_ORDER];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [...DEFAULT_TAB_ORDER];
-    const ids = parsed.filter(isTabId);
-    if (ids.length !== DEFAULT_TAB_ORDER.length || new Set(ids).size !== DEFAULT_TAB_ORDER.length) {
-      return [...DEFAULT_TAB_ORDER];
+    let ids = parsed.filter(isTabId) as TabId[];
+    if (ids.length === DEFAULT_TAB_ORDER.length && new Set(ids).size === DEFAULT_TAB_ORDER.length) {
+      return ids;
     }
-    return ids;
+    // Legacy: only contracts + builder saved — insert Scout after Builder
+    if (
+      ids.length === 2 &&
+      ids.includes("contracts") &&
+      ids.includes("builder") &&
+      !ids.includes("scout")
+    ) {
+      const next = [...ids];
+      const bi = next.indexOf("builder");
+      next.splice(bi + 1, 0, "scout");
+      return next;
+    }
+    return [...DEFAULT_TAB_ORDER];
   } catch {
     return [...DEFAULT_TAB_ORDER];
   }
@@ -164,6 +178,7 @@ export default function App() {
                 <BuildMiningSection />
               </div>
             )}
+            {activeTab === "scout" && <ScoutSection />}
             {activeTab === "contracts" && <ContractsSection />}
           </main>
           <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />

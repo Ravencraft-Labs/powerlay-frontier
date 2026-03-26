@@ -18,13 +18,6 @@ function getSettingsPath(): string {
 export interface AppSettings {
   gameLogDir?: string;
   skipLogPrompt?: boolean;
-  /** Override Sui GraphQL URL for tribe lookup. Empty = use app default or POWERLAY_EF_GRAPHQL_URL. */
-  efGraphqlUrl?: string;
-  /**
-   * Base URL for EVE Frontier World API (tribe display name via GET /v2/tribes/{id}).
-   * No trailing slash. Empty = use POWERLAY_EF_WORLD_API_BASE or built-in Stillness default.
-   */
-  efWorldApiBaseUrl?: string;
 }
 
 const DEFAULT_GAME_LOG_DIR =
@@ -41,8 +34,10 @@ export function loadSettings(): AppSettings {
     const p = getSettingsPath();
     if (!fs.existsSync(p)) return { ...defaults };
     const raw = fs.readFileSync(p, "utf-8");
-    const data = JSON.parse(raw) as Partial<AppSettings>;
-    return { ...defaults, ...data };
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    delete data.efGraphqlUrl;
+    delete data.efWorldApiBaseUrl;
+    return { ...defaults, ...(data as Partial<AppSettings>) };
   } catch {
     return { ...defaults };
   }

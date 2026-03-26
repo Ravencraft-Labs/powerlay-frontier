@@ -1,15 +1,14 @@
 # Contracts backend integration
 
-The desktop **Contracts** tab talks to a **contracts service** through **Electron IPC** (`window.efOverlay.contracts`). The **main process** either calls a configured **HTTP API** or an **in-memory mock** store.
+The desktop **Contracts** tab talks to a **contracts service** through **Electron IPC** (`window.efOverlay.contracts`). The **main process** calls a configured **HTTP API** for all contract operations.
 
 **Security / disclosure:** This file describes behavior at a high level only. **Do not** put production or staging base URLs, API keys, or deployment-specific paths in public READMEs, changelogs, or issues. Route names, query shapes, and header contracts for a real deployment belong in **private operator docs** and **OpenAPI** shared out-of-band. Implementers working in this repo should read `packages/electron-shell/src/contracts/` (especially `contractsHttpBackend.ts` and the mappers) for exact requests.
 
-## Configure HTTP vs mock
+## Configure API base
 
 | Variable | Effect |
 |----------|--------|
 | `POWERLAY_CONTRACTS_API_BASE` | Root URL for the contracts HTTP API for your environment (must match what that environment’s API expects, including any version prefix). |
-| `POWERLAY_CONTRACTS_USE_MOCK` | If `true` / `1` / `yes`, IPC uses the embedded mock store (no HTTP). |
 
 Set env vars before starting Electron (shell, IDE launch config, or OS environment).
 
@@ -23,10 +22,16 @@ The shell sends **stable caller identity** (in normal use derived from the conne
 - **Detail** — Expanding a row loads full contract detail from the server; tribe mismatch and similar cases surface as structured errors in the UI.
 - **My contracts** — Tabs (all lifecycle views) use list IPC that prefers **bucketed** server listings when implemented, with fallbacks; the app may merge a **local draft id index** so drafts still appear if list endpoints omit them.
 - **Create / update draft** — Create and full-document update flows send payloads built by the domain→backend mappers; the server is treated as authoritative for stored rows.
-- **Publish / complete / cancel** — Success and error codes are mapped into UI results; mock mode simulates escrow where applicable.
-- **Reachability** — In HTTP mode, the main process performs a **minimal request** to decide if the service is up; the **configured URL is not shown** in the UI.
+- **Publish / complete / cancel** — Success and error codes are mapped into UI results.
+- **Reachability** — The main process performs a **minimal request** to decide if the service is up; the **configured URL is not shown** in the UI.
 
 For **token balance**, **stats**, and other **optional** fields, the client maps whatever the server returns; some UI totals stay at defaults until the API exposes them.
+
+### SSU tracking flag (optional API)
+
+Draft create/update may send **`track_ssu_auto`** (boolean). Detail and list responses may include **`track_ssu_auto`** or alias **`ssu_tracking_enabled`**. When enabled for an **active** contract with a **target SSU id**, the desktop UI **polls** `GET /contracts/{id}` about every **15 seconds** while the row or expanded card is visible — so progress updated by a **separate watcher → backend** pipeline appears without manual refresh. The app does **not** subscribe to chain events.
+
+After publish, toggling tracking is not done via draft update (which applies only while **`status === "draft"`**). The shell implements **`PATCH /contracts/{id}`** with JSON body **`{ "track_ssu_auto": true | false }`** for the creator; IPC channel **`contracts:patch-tracking`**. If the API does not support `PATCH` yet, the client may fall back to local-only polling (see UI code).
 
 ## Where code lives
 
@@ -36,25 +41,21 @@ For **token balance**, **stats**, and other **optional** fields, the client maps
 | DTO → domain | `packages/electron-shell/src/contracts/mapBackendToDomain.ts` | `LogisticsContract`, browse summaries, stats, publish errors |
 | Domain → request body | `packages/electron-shell/src/contracts/mapDomainToBackend.ts` | Create/update payloads |
 | HTTP transport | `packages/electron-shell/src/contracts/contractsHttpBackend.ts` | `fetch`, query strings, merge-on-update for PUT |
-| IPC wiring | `packages/electron-shell/src/ipc/contractsHandlers.ts` | Chooses HTTP vs mock; error logging |
+| IPC wiring | `packages/electron-shell/src/ipc/contractsHandlers.ts` | HTTP backend; error logging |
 
 UI code should use **`@powerlay/core`** contract types and **`getContractsClient()`** in the renderer.
 
-## Tribe resolution (client-side, public chain read)
+## Tribe resolution: EVE Frontier + Sui (how it fits together)
 
-Tribe is resolved in the **Electron main process** via **Sui GraphQL** (`playerTribeFromChain.ts`, `tribeResolve.ts`).
+Contracts need a **numeric tribe id** and optionally a **display name**. In this stack those come from **two different systems**: Sui GraphQL (chain read) and the Frontier World API (tribe label). The app uses one **default public GraphQL URL** and picks the **World API host** from the **`PlayerProfile` Move type** (Utopia vs Stillness world package id), so operators do not configure shard URLs in Settings.
 
-**Endpoint resolution order:** (1) **Settings** in the desktop app (`efGraphqlUrl` in `settings.json`), (2) env **`POWERLAY_EF_GRAPHQL_URL`**, (3) built-in default for the packaged network. Users can override in **Settings → Contracts & tribe**.
+### Source of truth on Sui
 
-**`POWERLAY_EF_GRAPHQL_TIMEOUT_MS`** (default 10000) controls the fetch timeout.
+- **Authoritative for `tribe_id`:** the on-chain **`Character`** Move object. The game writes and updates **`tribe_id`** there; tools only **read** it.
+- **Link from wallet:** the wallet owns a **`PlayerProfile`** whose **`character_id`** field points at that **`Character`**.
+- **GraphQL** is used to query those objects (wallet-owned objects → profile → load character). The app default targets public Sui testnet; override the indexer with **`POWERLAY_EF_GRAPHQL_URL`** when your deployment differs.
 
-If lookup fails, the UI shows a warning; contract search stays **public-only** until tribe is resolved.
-
-### Path from wallet to character tribe (`tribe_id`)
-
-On the game’s Sui deployment, tribe membership for contracts is keyed off a **numeric id** on the player’s **Character** object. The wallet address is an **account**; the **Character** is a **separate object**. The link is a **PlayerProfile** object **owned** by the wallet.
-
-**Logical chain (high level):**
+**Logical chain:**
 
 ```mermaid
 flowchart LR
@@ -62,33 +63,21 @@ flowchart LR
   P["Object: PlayerProfile\n(owned by wallet)"]
   C["Object: Character\n(id = character_id)"]
   T["Field: tribe_id\n(numeric)"]
-  X["HTTP tribe context header\n(string form of tribe_id)"]
+  X["HTTP X-Tribe-Id\n(string form)"]
   W -->|"owns"| P
   P -->|"character_id"| C
   C -->|"tribe_id"| T
   T --> X
 ```
 
-1. After login, the app has the player’s Sui address (used as the GraphQL `address` filter).
-2. Among objects **owned by that address**, find a Move object whose type matches the game’s **PlayerProfile** pattern (see source for the exact substring match).
-3. Read **`character_id`** from that object’s JSON, then load that object as **Character** and read **`tribe_id`**.
-4. The shell sends that value in string form as tribe context for HTTP calls (exact header name in `contractsHttpBackend.ts`).
+Implementation: **`playerTribeFromChain.ts`**, **`tribeResolve.ts`** (Electron main). **Env:** **`POWERLAY_EF_GRAPHQL_URL`** (optional indexer override); timeout **`POWERLAY_EF_GRAPHQL_TIMEOUT_MS`** (default 10000).
 
-**Why two requests?** The wallet object does not embed `tribe_id`; you discover the Character via the profile, then load it.
+**Multiple `PlayerProfile` objects:** the same wallet can own more than one profile (e.g. different published world packages). The app chooses **Utopia** package first, then **Stillness**, then the first profile in GraphQL order.
 
-**What is *not* on the chain-only path**
+### Tribe display name (Frontier World API)
 
-- **Tribe display name** — Character JSON may include a **character** name, not the tribe **name**; a readable tribe label requires the optional HTTP step below (or stays unset).
-- **Other owned objects** — Useful for debugging, but **tribe_id** for contracts comes from the **Character** object as above.
+**`tribe_id`** on chain is a number. Human-readable tribe **name** / **nameShort** come from the Frontier **World API**: **`GET /v2/tribes/{id}`**. The app selects the World API **base URL** from the chosen profile’s world package (Stillness vs Utopia — official hosts under [EVE Frontier — Resources](https://docs.evefrontier.com/tools/resources)). Operators may force a single base with **`POWERLAY_EF_WORLD_API_BASE`** or disable name lookup with **`POWERLAY_EF_WORLD_API_DISABLE`**.
 
-### Optional tribe display name (separate HTTP service)
+### Contracts visibility and tribe
 
-The chain path yields a **numeric tribal id**. The app may call a **separate configurable HTTP service** to resolve a display name for the UI. Base URL, timeout, and disable flags are set in **Settings** and environment variables; **defaults and path templates are only in source** (`playerTribeFromChain.ts`, settings UI)—do not treat public markdown as authoritative for production endpoints.
-
-**Other networks:** Use GraphQL for the **same network** as the player’s objects. Type matching uses stable **suffixes** on Move type names so different package ids still match (see source).
-
-**Debug script:** From the repo root, copy your wallet from the header (**Copy address**), then run `pnpm debug-graphql` with the address (optional GraphQL URL). See `scripts/debug-ef-graphql.mjs` for usage.
-
-## Related docs
-
-- **OpenAPI / operator docs:** Obtain from whoever runs the contracts API you connect to; do not rely on this file for path-by-path specs.
+Search and list flows may send **`X-Tribe-Id`** when resolved. If tribe resolution fails, the UI may restrict or warn (e.g. tribe-scoped contracts hidden until resolved). See **`ContractsAccessContext`** and **`docs/auth-architecture.md`** for UI gating.
