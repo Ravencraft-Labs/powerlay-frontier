@@ -1,8 +1,61 @@
 # Powerlay Frontier
 
-Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/mining engine, and desktop dashboard.
+**Community desktop companion for [EVE Frontier](https://evefrontier.com)** — production and mining planning, tribe coordination via contracts, and transparent in-game overlays. Available for **Windows** and **macOS**.
+
+> 🚧 Active development 🚧 <br>
+> Latest features and changes are in [Releases](https://github.com/Ravencraft-Labs/powerlay-frontier/releases)
+
+Some features (Contracts, Scout) interact with the SUI Network and require a connected **EVE Wallet**.
 
 **Community tool — not affiliated with CCP Games.** All game-related names, images, and assets are trademarks and/or copyrights of CCP hf.
+
+---
+
+## Modules
+
+| Module | Status | Description |
+|--------|--------|-------------|
+| **Builder** | **stable** | Blueprints, production calculator, mining helper, ingredient breakdowns |
+| **Contracts** | WIP | Create tribe and public contracts for coordination and rewards — requires EVE Wallet |
+| **Scout** | WIP | System scanning and tracking tools|
+| **Overlay** | **stable** | Transparent always-on-top panels rendered over the game window - available in different modules|
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><b>Builder</b></td>
+    <td align="center"><b>Different reciepes support</b></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/overview.png"><img src="docs/screenshots/preview/overview.png" width="400"/></a></td>
+    <td><a href="docs/screenshots/builder.png"><img src="docs/screenshots/preview/builder.png" width="400"/></a></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Contracts</b></td>
+    <td align="center"><b>Scout</b></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/contracts.png"><img src="docs/screenshots/preview/contracts.png" width="400"/></a></td>
+    <td><a href="docs/screenshots/scout.png"><img src="docs/screenshots/preview/scout.png" width="400"/></a></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><b>In-game Overlays</b></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="docs/screenshots/overlay-ingame.png"><img src="docs/screenshots/preview/overlay-ingame.png" width="820"/></a></td>
+  </tr>
+</table>
+
+---
+
+## Safe Overlay Philosophy
+
+Powerlay does not automate gameplay, read process memory, or inject into the game. The overlay is a separate transparent window — nothing touches the EVE Frontier client.
+
+---
 
 ## Developer Setup
 
@@ -11,7 +64,32 @@ Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/
 
 ```bash
 pnpm install
+pnpm dev        # Start desktop UI (:5173), overlay UI (:5174), and Electron
 ```
+
+### Build
+
+Windows
+
+```bash
+pnpm build              # Build all packages
+pnpm build:portable     # Build Windows portable .exe (output in dist/)
+```
+
+macOS
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run build:mac    # Build unsigned macOS package (output in dist/)
+```
+
+### Test & Lint
+
+```bash
+pnpm test
+pnpm lint
+```
+
+---
 
 ## Game data (required for Builder features)
 
