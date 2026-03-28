@@ -12,6 +12,7 @@ data/
 # Cursor / IDE
 .cursorrules
 .cursor/
+.claude
 
 # Debug logs
 debug-*.log

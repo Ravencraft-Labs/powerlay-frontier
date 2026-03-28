@@ -10,6 +10,7 @@ import { registerMiningHandlers } from "./ipc/miningHandlers.js";
 import { startAuthServer } from "./auth/authServer.js";
 import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
+import { registerScoutHandlers } from "./ipc/scoutHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -20,9 +21,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-type OverlayFrame = "contracts" | "builder";
+type OverlayFrame = "contracts" | "builder" | "scout";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -54,7 +55,7 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["contracts", "builder"] as OverlayFrame[]) {
+    for (const f of ["contracts", "builder", "scout"] as OverlayFrame[]) {
       let b = data[f];
       if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
@@ -412,6 +413,7 @@ app.whenReady().then(async () => {
     mainWindow?.focus();
   });
   registerTribeHandlers();
+  registerScoutHandlers();
 
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();
@@ -515,6 +517,12 @@ ipcMain.handle("overlay:toggle", (_event, frame: OverlayFrame) => {
   else w.show();
 });
 
+ipcMain.handle("overlay:toggle-scout", () => {
+  const w = getOrCreateOverlayWindow("scout");
+  if (w.isVisible()) w.hide();
+  else w.show();
+});
+
 ipcMain.handle("overlay:toggle-builder", (_event, buildId: string) => {
   const w = getOrCreateBuilderOverlayWindow(buildId);
   if (w.isVisible()) w.hide();
@@ -531,7 +539,7 @@ ipcMain.handle("overlay:get-visible-builder-ids", () => {
 
 ipcMain.handle("overlay:show", (_event, frame: OverlayFrame) => {
   if (frame === "builder") return;
-  getOrCreateOverlayWindow(frame).show();
+  getOrCreateOverlayWindow(frame as Exclude<OverlayFrame, "builder">).show();
 });
 
 ipcMain.handle("overlay:hide", (_event, frame: OverlayFrame, buildId?: string) => {

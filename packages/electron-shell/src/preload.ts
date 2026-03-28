@@ -81,5 +81,21 @@ contextBridge.exposeInMainWorld("efOverlay", {
   tribe: {
     resolve: () => ipcRenderer.invoke("tribe:resolve"),
   },
+  scout: {
+    getCurrentSystem: () => ipcRenderer.invoke("scout:get-current-system"),
+    getActiveSystem: () => ipcRenderer.invoke("scout:get-active-system"),
+    setSystemOverride: (system: string | null) => ipcRenderer.invoke("scout:set-system-override", system),
+    getError: () => ipcRenderer.invoke("scout:get-error"),
+    list: () => ipcRenderer.invoke("scout:list"),
+    get: (id: string) => ipcRenderer.invoke("scout:get", id),
+    create: (input: unknown) => ipcRenderer.invoke("scout:create", input),
+    update: (id: string, patch: unknown) => ipcRenderer.invoke("scout:update", id, patch),
+    delete: (id: string) => ipcRenderer.invoke("scout:delete", id),
+    getSettings: () => ipcRenderer.invoke("scout:get-settings"),
+    updateSettings: (patch: unknown) => ipcRenderer.invoke("scout:update-settings", patch),
+    startWatching: () => ipcRenderer.invoke("scout:start-watching"),
+    stopWatching: () => ipcRenderer.invoke("scout:stop-watching"),
+    getActivityLog: (limit?: number) => ipcRenderer.invoke("scout:get-activity-log", limit),
+  },
   getIconsBaseUrl: () => Promise.resolve("app://icons/"),
 });
