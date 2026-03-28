@@ -74,6 +74,7 @@ export interface EFOverlayAPI {
     toggle: (frame: OverlayShellFrame) => Promise<void>;
     toggleBuilder: (buildId: string) => Promise<void>;
     getVisibleBuilderIds: () => Promise<string[]>;
+    getVisible?: (frame: OverlayShellFrame) => Promise<boolean>;
     show: (frame: OverlayShellFrame) => Promise<void>;
     hide: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;
     hideBuilder?: (buildId: string) => Promise<void>;

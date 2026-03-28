@@ -30,17 +30,18 @@ contextBridge.exposeInMainWorld("efOverlay", {
     delete: (id: string) => ipcRenderer.invoke("builds:delete", id),
   },
   overlay: {
-    setContentSize: (frame: "contracts" | "builder", width: number, height: number, buildId?: string) =>
+    setContentSize: (frame: "contracts" | "builder" | "scout", width: number, height: number, buildId?: string) =>
       ipcRenderer.send("overlay:set-content-size", frame, width, height, buildId),
-    toggle: (frame: "contracts" | "builder") => ipcRenderer.invoke("overlay:toggle", frame),
+    toggle: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:toggle", frame),
     toggleBuilder: (buildId: string) => ipcRenderer.invoke("overlay:toggle-builder", buildId),
     getVisibleBuilderIds: () => ipcRenderer.invoke("overlay:get-visible-builder-ids") as Promise<string[]>,
-    show: (frame: "contracts" | "builder") => ipcRenderer.invoke("overlay:show", frame),
-    hide: (frame: "contracts" | "builder", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
+    getVisible: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:get-visible", frame),
+    show: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:show", frame),
+    hide: (frame: "contracts" | "builder" | "scout", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
     hideBuilder: (buildId: string) => ipcRenderer.invoke("overlay:hide-builder", buildId),
-    getLockState: (frame: "contracts" | "builder", buildId?: string) =>
+    getLockState: (frame: "contracts" | "builder" | "scout", buildId?: string) =>
       ipcRenderer.invoke("overlay:get-lock-state", frame, buildId),
-    toggleLock: (frame: "contracts" | "builder", buildId?: string) =>
+    toggleLock: (frame: "contracts" | "builder" | "scout", buildId?: string) =>
       ipcRenderer.invoke("overlay:toggle-lock", frame, buildId),
     getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) =>

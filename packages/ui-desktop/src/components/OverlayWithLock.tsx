@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-type OverlayFrame = "contracts" | "builder";
+type OverlayFrame = "contracts" | "builder" | "scout";
 
 function LockClosedIcon({ className }: { className?: string }) {
   return (
@@ -27,21 +27,28 @@ export interface OverlayWithLockProps {
 
 export function OverlayWithLock({ frame, btnCls }: OverlayWithLockProps) {
   const [locked, setLocked] = useState(false);
+  const [visible, setVisible] = useState(false);
 
-  const loadLockState = useCallback(async () => {
-    const lockedState = await window.efOverlay?.overlay?.getLockState?.(frame);
+  const loadState = useCallback(async () => {
+    const [lockedState, visibleState] = await Promise.all([
+      window.efOverlay?.overlay?.getLockState?.(frame),
+      window.efOverlay?.overlay?.getVisible?.(frame),
+    ]);
     if (typeof lockedState === "boolean") setLocked(lockedState);
+    if (typeof visibleState === "boolean") setVisible(visibleState);
   }, [frame]);
 
   useEffect(() => {
     if (!window.efOverlay?.overlay?.getLockState) return;
-    loadLockState();
-    const id = setInterval(loadLockState, 500);
+    loadState();
+    const id = setInterval(loadState, 500);
     return () => clearInterval(id);
-  }, [loadLockState]);
+  }, [loadState]);
 
-  const handleToggleOverlay = () => {
-    window.efOverlay?.overlay?.toggle?.(frame);
+  const handleToggleOverlay = async () => {
+    await window.efOverlay?.overlay?.toggle?.(frame);
+    const v = await window.efOverlay?.overlay?.getVisible?.(frame);
+    if (typeof v === "boolean") setVisible(v);
   };
 
   const handleToggleLock = async () => {
@@ -54,9 +61,17 @@ export function OverlayWithLock({ frame, btnCls }: OverlayWithLockProps) {
 
   if (!hasOverlayApi) return null;
 
+  const overlayBtnCls = visible
+    ? btnCls
+        .replace("text-muted", "text-amber-400")
+        .replace("border-border/60", "border-amber-400/60")
+        .replace("hover:text-text", "hover:text-amber-300")
+        .replace("hover:border-border", "hover:border-amber-400")
+    : btnCls;
+
   return (
     <div className="flex items-center gap-1">
-      <button type="button" className={btnCls} onClick={handleToggleOverlay}>
+      <button type="button" className={overlayBtnCls} onClick={() => void handleToggleOverlay()}>
         Overlay
       </button>
       {hasLockApi && (

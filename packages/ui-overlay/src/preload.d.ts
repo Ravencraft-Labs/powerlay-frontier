@@ -64,6 +64,7 @@ export interface EFOverlayAPI {
     hide?: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;
     hideBuilder: (buildId: string) => Promise<void>;
     getLockState?: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
+    getVisible?: (frame: OverlayShellFrame) => Promise<boolean>;
   };
   mining?: {
     getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null }>;

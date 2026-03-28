@@ -563,6 +563,11 @@ ipcMain.on("overlay:set-builder-state", (_event, states: Record<string, BuilderO
   builderOverlayStateByBuild = states && typeof states === "object" ? { ...states } : {};
 });
 
+ipcMain.handle("overlay:get-visible", (_event, frame: OverlayFrame) => {
+  const w = overlayWindows[frame];
+  return w && !w.isDestroyed() && w.isVisible();
+});
+
 ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame, buildId?: string) => {
   if (frame === "builder" && buildId) return overlayLockStateByBuild[buildId] ?? false;
   return overlayLockState[frame] ?? false;

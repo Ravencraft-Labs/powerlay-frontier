@@ -3,6 +3,7 @@ import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, Scou
 import { ScoutQuickPicker } from "./ScoutQuickPicker";
 import { ScoutAddEntryForm } from "./ScoutAddEntryForm";
 import { ScoutEntryList } from "./ScoutEntryList";
+import { OverlayWithLock } from "./OverlayWithLock";
 
 const sectionCls = "bg-surface rounded-lg px-5 py-4 border border-border";
 const filterPillCls = (on: boolean) =>
@@ -39,7 +40,6 @@ export function ScoutSection() {
   const [entries, setEntries] = useState<ScoutEntry[]>([]);
   const [filterType, setFilterType] = useState<FilterValue>("all");
   const [settings, setSettings] = useState<ScoutSettings>({ defaultVisibility: "tribe" });
-  const [overlayVisible, setOverlayVisible] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activityLog, setActivityLog] = useState<ScoutActivityEvent[]>([]);
   const [logOpen, setLogOpen] = useState(false);
@@ -178,27 +178,15 @@ export function ScoutSection() {
     }
   }
 
-  async function handleToggleOverlay() {
-    try {
-      await window.efOverlay?.overlay?.toggle?.("scout");
-      setOverlayVisible((v) => !v);
-    } catch {
-      /* ignore */
-    }
-  }
-
   return (
     <section className={sectionCls}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="m-0 text-base font-semibold text-text">Scout</h2>
-        <button
-          type="button"
-          onClick={handleToggleOverlay}
-          className="px-3 py-1 text-xs rounded-md border border-border/60 text-muted hover:text-text hover:border-border cursor-pointer bg-transparent"
-        >
-          {overlayVisible ? "Hide overlay" : "Show overlay"}
-        </button>
+        <OverlayWithLock
+          frame="scout"
+          btnCls="px-3 py-1 text-xs rounded-md border border-border/60 text-muted hover:text-text hover:border-border cursor-pointer bg-transparent"
+        />
       </div>
 
       {/* System banner */}
@@ -224,6 +212,22 @@ export function ScoutSection() {
             </span>
             {systemOverride && (
               <span className="text-xs text-yellow-400/80 border border-yellow-400/30 rounded px-1.5 py-0.5">manual</span>
+            )}
+            {!systemOverride && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await window.efOverlay?.scout?.startWatching?.();
+                    const sys = await window.efOverlay?.scout?.getCurrentSystem?.();
+                    setAutoSystem(sys ?? null);
+                  } catch { /* ignore */ }
+                }}
+                className="text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 p-0.5"
+                title="Re-scan chat log for current system"
+              >
+                ↺
+              </button>
             )}
             <button
               type="button"
