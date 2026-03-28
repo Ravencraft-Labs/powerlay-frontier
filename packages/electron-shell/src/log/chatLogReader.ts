@@ -5,6 +5,9 @@ import { checkLogDir, createFileTailer, expandPath } from "./fileTailer.js";
 
 export const DEFAULT_CHAT_LOG_DIR = "%USERPROFILE%\\Documents\\Frontier\\Logs\\Chatlogs";
 
+/** Only watch Local_*.txt — ignore Corp, Alliance, etc. */
+const LOCAL_FILE_FILTER = (filename: string) => filename.startsWith("Local_");
+
 let currentSystem: string | null = null;
 let chatLogError: string | null = null;
 let tailerStop: (() => void) | null = null;
@@ -46,7 +49,7 @@ export function startChatLogReader(chatLogDir: string = DEFAULT_CHAT_LOG_DIR, po
   chatLogError = null;
 
   const expandedDir = expandPath(chatLogDir);
-  const check = checkLogDir(expandedDir);
+  const check = checkLogDir(expandedDir, LOCAL_FILE_FILTER);
   if (check.ok) {
     const found = reverseScanlastSystem(check.path);
     if (found) {
@@ -58,6 +61,7 @@ export function startChatLogReader(chatLogDir: string = DEFAULT_CHAT_LOG_DIR, po
   const tailer = createFileTailer({
     logDir: chatLogDir,
     pollIntervalMs,
+    fileFilter: LOCAL_FILE_FILTER,
     onLine: (line) => {
       const event = parseChatLine(line);
       if (event) {

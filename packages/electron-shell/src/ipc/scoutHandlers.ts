@@ -1,9 +1,27 @@
 import { ipcMain } from "electron";
 import type { CreateScoutEntryInput, UpdateScoutEntryInput, ScoutEntry, ScoutSettings } from "@powerlay/core";
-import { getCurrentSystem, getChatLogError, startChatLogReader, stopChatLogReader, DEFAULT_CHAT_LOG_DIR } from "../log/chatLogReader.js";
+import { getCurrentSystem, getChatLogError, startChatLogReader, stopChatLogReader } from "../log/chatLogReader.js";
+import { loadSettings } from "./settingsStore.js";
 import { getScoutStore } from "./scoutStore.js";
 import { loadScoutSettings, updateScoutSettings } from "./scoutSettingsStore.js";
 import { logCreated, logCleared, logDeleted, getActivityLog } from "./scoutActivityStore.js";
+
+/** Derive the Chatlogs directory from the configured game log dir.
+ *  e.g. ".../Frontier/Logs/Gamelogs" → ".../Frontier/Logs/Chatlogs"
+ *  Falls back to the standard default if the path doesn't contain "Gamelogs".
+ */
+function resolveChatLogDir(): string {
+  const settings = loadSettings();
+  const gameLogDir = settings.gameLogDir ?? "";
+  if (gameLogDir) {
+    const derived = gameLogDir.replace(/[Gg]amelogs$/, "Chatlogs");
+    if (derived !== gameLogDir) return derived;
+    // gameLogDir doesn't end in Gamelogs — fall through to default
+  }
+  return process.platform === "win32"
+    ? "%USERPROFILE%\\Documents\\Frontier\\Logs\\Chatlogs"
+    : `${process.env.HOME || "~"}/Documents/Frontier/Logs/Chatlogs`;
+}
 
 /** Returns the active system: manual override takes priority over chatlog. */
 function getActiveSystem(): string | null {
@@ -29,8 +47,8 @@ async function syncToRemote(_entries: ScoutEntry[]): Promise<void> {
 export function registerScoutHandlers(): void {
   const store = getScoutStore();
 
-  // Auto-start chatlog reader
-  startChatLogReader(DEFAULT_CHAT_LOG_DIR);
+  // Auto-start chatlog reader using derived Chatlogs path
+  startChatLogReader(resolveChatLogDir());
 
   ipcMain.handle("scout:get-current-system", () => getCurrentSystem());
 
@@ -94,7 +112,7 @@ export function registerScoutHandlers(): void {
   });
 
   ipcMain.handle("scout:start-watching", () => {
-    startChatLogReader(DEFAULT_CHAT_LOG_DIR);
+    startChatLogReader(resolveChatLogDir());
   });
 
   ipcMain.handle("scout:stop-watching", () => {

@@ -43,6 +43,7 @@ export function ScoutSection() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activityLog, setActivityLog] = useState<ScoutActivityEvent[]>([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [chatLogError, setChatLogError] = useState<string | null>(null);
   const overrideInputRef = useRef<HTMLInputElement>(null);
 
   const activeSystem = systemOverride ?? autoSystem ?? "";
@@ -75,12 +76,14 @@ export function ScoutSection() {
 
     const interval = setInterval(async () => {
       try {
-        const [sys, list] = await Promise.all([
+        const [sys, list, err] = await Promise.all([
           window.efOverlay?.scout?.getCurrentSystem?.(),
           window.efOverlay?.scout?.list?.(),
+          window.efOverlay?.scout?.getError?.(),
         ]);
         setAutoSystem(sys ?? null);
         if (list) setEntries(list);
+        setChatLogError(err ?? null);
       } catch {
         /* ignore */
       }
@@ -188,6 +191,13 @@ export function ScoutSection() {
           btnCls="px-3 py-1 text-xs rounded-md border border-border/60 text-muted hover:text-text hover:border-border cursor-pointer bg-transparent"
         />
       </div>
+
+      {/* Chat log error banner */}
+      {chatLogError && (
+        <div className="mb-3 px-3 py-2 rounded-md border border-red-500/40 bg-red-500/10 text-xs text-red-400 break-all">
+          {chatLogError}
+        </div>
+      )}
 
       {/* System banner */}
       <div className="flex items-center gap-2 mb-4 p-3 rounded-md border border-border/50 bg-bg/40">

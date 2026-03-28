@@ -13,6 +13,7 @@ data/
 .cursorrules
 .cursor/
 .claude
+help_db
 
 # Debug logs
 debug-*.log
