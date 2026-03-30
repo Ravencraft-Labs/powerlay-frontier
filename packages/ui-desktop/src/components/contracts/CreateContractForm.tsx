@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import type { ContractLineDraftInput, ContractPriority, ContractVisibility, LogisticsContract } from "@powerlay/core";
 import { mergeDraftResourceLines } from "@powerlay/core";
-import type { GameData } from "../../preload";
+import type { ConnectedStorage, GameData } from "../../preload";
 import type { ContractsClient } from "../../services/contracts/contractsClient";
 import { contractsErrorForUi } from "../../utils/contractsIpcError";
 import { ContractResourceLineEditor } from "./ContractResourceLineEditor";
@@ -28,9 +28,10 @@ export interface CreateContractFormProps {
   gameData: GameData | null;
   onPublished: () => void;
   onDraftsChanged: () => void;
+  onOpenConnectStorage: () => void;
 }
 
-export function CreateContractForm({ client, gameData, onPublished, onDraftsChanged }: CreateContractFormProps) {
+export function CreateContractForm({ client, gameData, onPublished, onDraftsChanged, onOpenConnectStorage }: CreateContractFormProps) {
   const types = gameData?.types ?? {};
   const systems = gameData?.starSystems ?? [];
 
@@ -46,6 +47,27 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
   const [lines, setLines] = useState<ContractLineDraftInput[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [connectedStorages, setConnectedStorages] = useState<ConnectedStorage[]>([]);
+  const [storagesLoading, setStoragesLoading] = useState(true);
+
+  const loadConnectedStorages = useCallback(async () => {
+    if (!window.efOverlay?.storage?.listConnected) {
+      setStoragesLoading(false);
+      return;
+    }
+    try {
+      const list = await window.efOverlay.storage.listConnected();
+      setConnectedStorages(list);
+    } catch {
+      setConnectedStorages([]);
+    } finally {
+      setStoragesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadConnectedStorages();
+  }, [loadConnectedStorages]);
 
   const loadDrafts = useCallback(async () => {
     try {
@@ -288,10 +310,39 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
             ))}
           </datalist>
         </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Target storage ID</span>
-          <input className={inputCls} value={targetSsuId} onChange={(e) => setTargetSsuId(e.target.value)} placeholder="Storage unit identifier" />
-        </label>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Target storage</span>
+          {storagesLoading ? (
+            <div className={`${inputCls} text-muted`}>Loading storages…</div>
+          ) : connectedStorages.length === 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="px-2 py-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 text-xs text-amber-200 leading-snug">
+                No storages connected yet.{" "}
+                <button
+                  type="button"
+                  className="underline text-amber-100 hover:text-white cursor-pointer"
+                  onClick={onOpenConnectStorage}
+                >
+                  Connect a storage unit
+                </button>{" "}
+                to link it to this contract.
+              </div>
+            </div>
+          ) : (
+            <select
+              className={inputCls}
+              value={targetSsuId}
+              onChange={(e) => setTargetSsuId(e.target.value)}
+            >
+              <option value="">— Select storage —</option>
+              {connectedStorages.map((s) => (
+                <option key={s.ssuObjectId} value={s.ssuObjectId}>
+                  {s.name ? `${s.name} · ` : ""}{s.ssuObjectId.slice(0, 20)}…
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Visibility</span>
           <select className={inputCls} value={visibility} onChange={(e) => setVisibility(e.target.value as ContractVisibility)}>

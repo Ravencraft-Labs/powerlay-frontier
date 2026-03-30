@@ -8,9 +8,36 @@ The desktop **Contracts** tab talks to a **contracts service** through **Electro
 
 | Variable | Effect |
 |----------|--------|
-| `POWERLAY_CONTRACTS_API_BASE` | Root URL for the contracts HTTP API for your environment (must match what that environment’s API expects, including any version prefix). |
+| `POWERLAY_API_BASE` | Root URL for the **Powerlay HTTP API** (contracts, storage, shared routes). Must include the version prefix your server uses (e.g. `…/api/v1`, no trailing slash). Example resolved paths: `POST {base}/contracts`, `GET {base}/storages`, `DELETE {base}/storages/{ssu_id}`. Storage routes require header **`X-Tribe-Id`**. Register body uses **`ssu_id`**, **`tx_hash`**, optional **`display_name`** (see `storageHttpBackend.ts`). (Replaces the former `POWERLAY_CONTRACTS_API_BASE` name.) |
 
 Set env vars before starting Electron (shell, IDE launch config, or OS environment).
+
+### How `{base}` maps to versioned routes
+
+The client concatenates **paths relative to `POWERLAY_API_BASE`**. If your server exposes routes under `/api/v1/...`, set the base to include that prefix (e.g. `https://example.com/api/v1`, no trailing slash). Then:
+
+- `POST {base}/contracts` → `POST /api/v1/contracts`
+- `GET {base}/contracts`, `GET {base}/contracts/{id}`, `PUT {base}/contracts/{id}`, `POST {base}/contracts/{id}/publish`, `…/join`, `…/hide`, `…/cancel`, `…/complete` — same pattern
+- `GET {base}/storages`, `POST {base}/storages`, `DELETE {base}/storages/{ssu_id}`
+
+Routes such as `/api/v1/admin/...` or `/api/v1/internal/...` are **not** called from the Electron shell in this repo; they are for other services or future use.
+
+### Storage schema sync (`app/schemas/storages.py`)
+
+| Backend (wire) | Desktop `ConnectedStorage` / POST body |
+|----------------|----------------------------------------|
+| **Request** `ssu_id` | Sent as `ssu_id` (not `ssu_object_id`) |
+| **Request** `display_name` | Sent when user enters a label (not `name`) |
+| **Request** `tx_hash` | Sent after on-chain connect; backend model should include this field (or use `extra` policy that allows it) |
+| **Response** `id` | `id` |
+| **Response** `ssu_id` | `ssuObjectId` |
+| **Response** `tribe_id` | `tribeId` |
+| **Response** `owner_user_id` | `ownerUserId` (optional) |
+| **Response** `owner_wallet` | `ownerWallet` (optional) |
+| **Response** `display_name` | `name` |
+| **Response** `is_active` | `isActive` (optional) |
+| **Response** `tx_hash` (if added later) | `txHash` |
+| **Response** `connected_at` (if added later) | `connectedAt`; else client uses parse-time `Date.now()` |
 
 ## Auth and context (conceptual)
 
@@ -26,6 +53,14 @@ The shell sends **stable caller identity** (in normal use derived from the conne
 - **Reachability** — The main process performs a **minimal request** to decide if the service is up; the **configured URL is not shown** in the UI.
 
 For **token balance**, **stats**, and other **optional** fields, the client maps whatever the server returns; some UI totals stay at defaults until the API exposes them.
+
+### Shared storage model
+
+A Powerlay-connected SSU operates as a **shared tribe stash**. The owner, tribe members, and (in a future phase) contract deliveries all interact with the **same open inventory** via `shared_deposit` / `shared_withdraw` in the `powerlay_storage` Move module. There is no personal owner slot inside a Powerlay-managed SSU; the owner uses the same shared path as any tribe member.
+
+When a contract delivery eventually needs to place items into storage, it will use the same shared open inventory — no separate contract-only storage mode is needed. The `StorageConfig` object created by `connect_storage` (shared on-chain, identified by `ssu_id` in the backend) is the single configuration reference for both tribe and contract flows.
+
+If the owner requires private/personal storage, that belongs on a separate SSU without the Powerlay extension installed.
 
 ### SSU tracking flag (optional API)
 
@@ -81,3 +116,15 @@ Implementation: **`playerTribeFromChain.ts`**, **`tribeResolve.ts`** (Electron m
 ### Contracts visibility and tribe
 
 Search and list flows may send **`X-Tribe-Id`** when resolved. If tribe resolution fails, the UI may restrict or warn (e.g. tribe-scoped contracts hidden until resolved). See **`ContractsAccessContext`** and **`docs/auth-architecture.md`** for UI gating.
+
+## Support / diagnostics
+
+**Application log:** `%APPDATA%\Powerlay\logs\powerlay.log` (Windows) — rotated NDJSON, one entry per line.
+
+**Authorize Storage flow:** all telemetry events are written to `powerlay.log` with the prefix `[auth_storage_page]`. Filter with:
+
+```
+grep [auth_storage_page] powerlay.log
+```
+
+Each line captures a short event code (`page_open`, `params_ok`/`params_err`, `wallets_ready`/`wallets_help`, `sign_connect`, `ptb_A`/`ptb_B`, `sign_submit`, `sign_ok`/`sign_err`, `callback_ok`, `pagehide`, `window_error`, `unhandled_rejection`) plus `ms` elapsed since page load and any relevant short fields. A typical successful run produces 6–10 lines.

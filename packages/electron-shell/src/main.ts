@@ -10,6 +10,7 @@ import { registerMiningHandlers } from "./ipc/miningHandlers.js";
 import { startAuthServer } from "./auth/authServer.js";
 import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
+import { registerStorageHandlers } from "./ipc/storageHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -400,18 +401,19 @@ function registerAppProtocol(): void {
 app.whenReady().then(async () => {
   registerAppProtocol();
   registerTodoHandlers();
-  registerContractsHandlers();
   registerBuildHandlers();
   registerGameDataHandlers();
   registerSettingsHandlers();
   registerMiningHandlers();
 
   const authServer = await startAuthServer();
+  registerContractsHandlers(authServer);
   registerAuthHandlers(authServer, () => {
     mainWindow?.show();
     mainWindow?.focus();
   });
   registerTribeHandlers();
+  registerStorageHandlers(authServer);
 
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();

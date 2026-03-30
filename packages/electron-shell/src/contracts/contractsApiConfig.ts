@@ -1,5 +1,8 @@
 /**
- * Central configuration for the Powerlay Contracts HTTP API (local or deployed).
+ * Central configuration for the Powerlay HTTP API (contracts, storage, and shared routes).
+ *
+ * Base URL must include the API version prefix the server expects (e.g. `.../api/v1`).
+ * Request paths are relative to that base (`/contracts`, `/storages`, …).
  *
  * @see docs/contracts-integration.md
  */
@@ -9,9 +12,9 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** API base including `/api/v1` prefix (no trailing slash). */
-export function getContractsApiBaseUrl(): string {
-  const raw = process.env.POWERLAY_CONTRACTS_API_BASE?.trim();
+/** API base including `/api/v1` (or equivalent) prefix; no trailing slash. */
+export function getPowerlayApiBaseUrl(): string {
+  const raw = process.env.POWERLAY_API_BASE?.trim();
   if (raw) return trimTrailingSlash(raw);
   return DEFAULT_BASE;
 }

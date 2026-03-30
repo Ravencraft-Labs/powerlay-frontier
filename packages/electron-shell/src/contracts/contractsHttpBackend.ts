@@ -18,10 +18,11 @@ import { loadSession } from "../auth/sessionStore.js";
 import type {
   BackendContractDetail,
   BackendContractListEnvelope,
+  BackendContractLogItem,
   BackendContractStats,
   BackendTokenBalance,
 } from "./backendDto.js";
-import { getContractsApiBaseUrl } from "./contractsApiConfig.js";
+import { getPowerlayApiBaseUrl } from "./contractsApiConfig.js";
 import {
   failureFromHttp,
   listRowCreatorMatch,
@@ -40,6 +41,8 @@ import {
 } from "./contractsDraftIndexStore.js";
 import { deterministicUserIdFromWallet } from "./walletUserId.js";
 import { getContractsDevNickname, getContractsDevUserId } from "./contractsApiConfig.js";
+import { queryCharacterNameFromChain } from "../blockchain/playerTribeFromChain.js";
+import type { ContractParticipant } from "@powerlay/core";
 
 /** Minimal UUID so list endpoint accepts the request; reachability only cares that TCP/HTTP completes. */
 const PING_USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -64,14 +67,14 @@ function humanizeReachabilityError(err: unknown): string {
     return "Cannot connect to the Powerlay backend (connection refused). Start the API server.";
   }
   if (code === "ENOTFOUND") {
-    return "Cannot resolve the Powerlay backend host. Check POWERLAY_CONTRACTS_API_BASE.";
+    return "Cannot resolve the Powerlay backend host. Check POWERLAY_API_BASE.";
   }
   if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
     return "Connection to the Powerlay backend timed out. Check the server address and firewall.";
   }
   const msg = err instanceof Error ? err.message : String(err);
   if (/fetch failed/i.test(msg)) {
-    return "Cannot reach the Powerlay backend. Ensure the server is running and POWERLAY_CONTRACTS_API_BASE is correct.";
+    return "Cannot reach the Powerlay backend. Ensure the server is running and POWERLAY_API_BASE is correct.";
   }
   return msg || "Cannot reach the Powerlay backend.";
 }
@@ -90,11 +93,13 @@ function resolveAuthContext(): AuthHeadersContext | null {
   const userId = devId ?? (wallet ? deterministicUserIdFromWallet(wallet) : null);
   if (!userId) return null;
   const tribeId = session?.tribeId?.trim() || null;
+  // Prefer dev override, then on-chain character name resolved at login time
+  const nickname = getContractsDevNickname() ?? session?.characterName?.trim() ?? null;
   return {
     userId,
     walletAddress: wallet,
     tribeId: (tribeId && tribeId.trim()) || null,
-    nickname: getContractsDevNickname() ?? null,
+    nickname: nickname || null,
   };
 }
 
@@ -108,11 +113,71 @@ async function readJson(res: Response): Promise<unknown> {
   }
 }
 
+export interface ContractLogEntry {
+  id: string;
+  eventType: string;
+  timestamp: number;
+  /** Resolved display name (nickname or on-chain character name). */
+  actorName?: string;
+  /** Wallet address — shown truncated when no name is available. */
+  actorWallet?: string;
+  /** On-chain character ID — shown as last-resort identifier. */
+  actorCharacterId?: string;
+  description?: string;
+  resourceName?: string;
+  quantity?: number;
+  txHash?: string;
+  fromStatus?: string;
+  toStatus?: string;
+  /** Raw extra fields from the backend for forward compatibility. */
+  raw?: unknown;
+}
+
+function mapContractLogItem(item: BackendContractLogItem, idx: number): ContractLogEntry {
+  const ts = Date.parse(item.occurred_at ?? item.timestamp ?? "");
+  const qty = item.quantity != null ? parseFloat(String(item.quantity)) : undefined;
+  // actor_wallet covers status_change/contribution; sender_wallet covers ssu_event rows
+  const wallet = item.actor_wallet?.trim() || item.sender_wallet?.trim() || undefined;
+  const name = item.actor_nickname?.trim() || undefined;
+  const charId = item.character_id?.trim() || undefined;
+  return {
+    id: String(item.id ?? idx),
+    eventType: item.event_type?.trim() || "event",
+    timestamp: Number.isFinite(ts) ? ts : 0,
+    actorName: name,
+    actorWallet: wallet,
+    actorCharacterId: charId,
+    description: item.description?.trim() || undefined,
+    resourceName: item.resource_name?.trim() || undefined,
+    quantity: qty != null && Number.isFinite(qty) ? qty : undefined,
+    txHash: item.tx_hash?.trim() || undefined,
+    fromStatus: item.from_status?.trim() || undefined,
+    toStatus: item.to_status?.trim() || undefined,
+    raw: item.data,
+  };
+}
+
+/**
+ * Best-effort: resolve on-chain character names for participants that have a wallet address.
+ * Results are cached in-process so repeated calls for the same wallet are free.
+ * Mutates the array in place; never throws.
+ */
+async function enrichParticipantNames(participants: ContractParticipant[]): Promise<void> {
+  const toResolve = participants.filter((p) => !!p.walletAddress);
+  if (!toResolve.length) return;
+  await Promise.allSettled(
+    toResolve.map(async (p) => {
+      const name = await queryCharacterNameFromChain(p.walletAddress!);
+      if (name) p.displayName = name;
+    })
+  );
+}
+
 export class ContractsHttpBackend {
   private readonly base: string;
 
   constructor(baseUrl?: string) {
-    this.base = (baseUrl ?? getContractsApiBaseUrl()).replace(/\/+$/, "");
+    this.base = (baseUrl ?? getPowerlayApiBaseUrl()).replace(/\/+$/, "");
   }
 
   private authHeaders(ctx: AuthHeadersContext, nicknameOverride?: string): HeadersInit {
@@ -441,7 +506,9 @@ export class ContractsHttpBackend {
     const json = await readJson(res);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
-    return mapContractDetailToLogistics(json as BackendContractDetail);
+    const contract = mapContractDetailToLogistics(json as BackendContractDetail);
+    await enrichParticipantNames(contract.participants);
+    return contract;
   }
 
   async createDraft(input: CreateDraftInput): Promise<LogisticsContract> {
@@ -553,11 +620,17 @@ export class ContractsHttpBackend {
       forgetContractDraft(auth.userId, contractId);
       return null;
     }
-    // OpenAPI: cancel is for published contracts; drafts are abandoned locally (search API does not list drafts).
+    // Drafts use DELETE /contracts/{id} — /cancel only accepts published contracts.
     if (before.status === "draft") {
+      const delRes = await this.request("DELETE", `/contracts/${encodeURIComponent(contractId)}`);
+      if (!delRes.ok && delRes.status !== 404) {
+        const json = await readJson(delRes);
+        throw new Error(JSON.stringify(parseErrorBody(json)));
+      }
       forgetContractDraft(auth.userId, contractId);
-      return before;
+      return null;
     }
+
     const res = await this.request("POST", `/contracts/${encodeURIComponent(contractId)}/cancel`);
     const json = await readJson(res);
     if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
@@ -579,6 +652,51 @@ export class ContractsHttpBackend {
     if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
     forgetContractDraft(auth.userId, contractId);
     return this.get(contractId);
+  }
+
+  /**
+   * Record a contract delivery after the on-chain `deliver_personal_to_owner_primary` PTB succeeds.
+   * Server must verify the Sui digest and atomically update reserves, deliverer balance, and line progress.
+   * `POST /contracts/{id}/deliveries`
+   */
+  async recordDelivery(
+    contractId: string,
+    body: {
+      lineId: string;
+      quantity: number;
+      suiTxDigest: string;
+      ssuObjectId: string;
+    }
+  ): Promise<LogisticsContract> {
+    this.requireAuth();
+    const res = await this.request("POST", `/contracts/${encodeURIComponent(contractId)}/deliveries`, {
+      body: {
+        line_id: body.lineId,
+        quantity: body.quantity,
+        sui_tx_digest: body.suiTxDigest.trim(),
+        ssu_object_id: body.ssuObjectId.trim(),
+      },
+    });
+    const json = await readJson(res);
+    if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
+    const contract = mapContractDetailToLogistics(json as BackendContractDetail);
+    await enrichParticipantNames(contract.participants);
+    return contract;
+  }
+
+  async getLogs(contractId: string, limit = 50): Promise<ContractLogEntry[]> {
+    this.requireAuth();
+    const q = new URLSearchParams({ limit: String(limit), offset: "0" });
+    const res = await this.request("GET", `/contracts/${encodeURIComponent(contractId)}/logs?${q}`);
+    if (res.status === 404) return [];
+    if (!res.ok) return [];
+    const json = await readJson(res);
+    const items: BackendContractLogItem[] = Array.isArray((json as { items?: unknown })?.items)
+      ? ((json as { items: BackendContractLogItem[] }).items)
+      : Array.isArray(json)
+        ? (json as BackendContractLogItem[])
+        : [];
+    return items.map(mapContractLogItem);
   }
 
   /**

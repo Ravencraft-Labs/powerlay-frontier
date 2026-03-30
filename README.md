@@ -73,7 +73,7 @@ Windows
 
 ```bash
 pnpm build              # Build all packages
-pnpm build:portable     # Build Windows portable .exe (output in dist/)
+pnpm run build:portable     # Build Windows portable .exe (output in dist/)
 ```
 
 macOS
@@ -139,7 +139,7 @@ Without these files, the Builder tab will show a "Types loaded but empty" or "Fi
 - `packages/core` — Pure logic (mining/build engine, contracts domain types, Tribe TODO helpers). No Electron/React.
 - `packages/ui-desktop` — Main dashboard (Contracts, Builder, wallet login).
 - `packages/ui-overlay` — Transparent overlay panel (contracts quick list, build tracking).
-- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure via env as in `docs/contracts-integration.md` (do not publish production URLs in public docs). **Tribe:** on-chain **`Character.tribe_id`** via Sui GraphQL (default indexer + optional **`POWERLAY_EF_GRAPHQL_URL`**); Frontier **World API** for display name follows the profile’s world package — see `docs/contracts-integration.md`.
+- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure **`POWERLAY_API_BASE`** (and related vars) as in `docs/contracts-integration.md` (do not publish production URLs in public docs). **Tribe:** on-chain **`Character.tribe_id`** via Sui GraphQL (default indexer + optional **`POWERLAY_EF_GRAPHQL_URL`**); Frontier **World API** for display name follows the profile’s world package — see `docs/contracts-integration.md`.
 
 ## Safe Overlay Philosophy
 

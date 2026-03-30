@@ -5,7 +5,7 @@ import type { GameData } from "../../preload";
 import { getContractsClient, type ContractsBackendStatus } from "../../services/contracts/contractsClient";
 import { formatWithThousandsSeparator } from "../../utils/format";
 import { DemoModal } from "../DemoModal";
-import { demoBtnCls } from "../demoUi";
+import { ConnectStorageModal } from "../storage/ConnectStorageModal";
 import { OverlayWithLock } from "../OverlayWithLock";
 import { CreateContractForm } from "./CreateContractForm";
 import { FindContractsPanel } from "./FindContractsPanel";
@@ -130,7 +130,7 @@ export function ContractsSection() {
           <button type="button" className={btnCls} onClick={openStats}>
             Statistics
           </button>
-          <button type="button" className={demoBtnCls} onClick={() => setConnectStorageOpen(true)}>
+          <button type="button" className={btnCls} onClick={() => setConnectStorageOpen(true)}>
             Connect storage
           </button>
           <OverlayWithLock frame="contracts" btnCls={btnCls} />
@@ -198,6 +198,7 @@ export function ContractsSection() {
             setSubview("find");
           }}
           onDraftsChanged={refreshBalance}
+          onOpenConnectStorage={() => setConnectStorageOpen(true)}
         />
       )}
 
@@ -222,16 +223,7 @@ export function ContractsSection() {
       )}
 
       {connectStorageOpen && (
-        <DemoModal title="Connect storage (demo)" titleId="connect-storage-demo-title" onClose={() => setConnectStorageOpen(false)}>
-          <p className="text-sm text-muted m-0 leading-relaxed">
-            Link a Storage unit to your Powerlay profile so contract deliveries and inventory sync. This screen is a mock — nothing is connected yet.
-          </p>
-          <div className="mt-3 rounded-md border border-border/50 bg-bg/40 px-3 py-2 text-sm">
-            <span className="text-muted">Would link: </span>
-            <span className="text-text font-mono">FORA-STORAGE-07</span>
-          </div>
-          <p className="text-xs text-muted m-0 mt-3">Demo only — no wallet or in-game action is performed.</p>
-        </DemoModal>
+        <ConnectStorageModal onClose={() => setConnectStorageOpen(false)} />
       )}
     </section>
   );

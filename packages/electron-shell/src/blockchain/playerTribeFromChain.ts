@@ -81,12 +81,16 @@ export function getWorldApiTribeFetchTimeoutMs(): number {
 export interface PlayerTribeResult {
   tribeId: string;
   tribeName?: string;
+  /** On-chain Character object ID for the wallet's PlayerProfile. */
+  characterId?: string;
+  /** Character display name from Character.json.metadata.name (EVE Frontier on-chain). */
+  characterName?: string;
 }
 
 /** World Package object ids — https://docs.evefrontier.com/tools/resources */
-const FRONTIER_WORLD_PACKAGE_UTOPIA =
+export const FRONTIER_WORLD_PACKAGE_UTOPIA =
   "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
-const FRONTIER_WORLD_PACKAGE_STILLNESS =
+export const FRONTIER_WORLD_PACKAGE_STILLNESS =
   "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
 
 const WALLET_OBJECTS_QUERY = `
@@ -184,12 +188,35 @@ export async function queryPlayerTribeFromChain(
       if (tribeName) parsed.tribeName = tribeName;
     }
 
+    parsed.characterId = characterId;
     return parsed;
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * In-memory cache: wallet address (lowercase) → character name or null.
+ * null means we already looked and found nothing; skip re-querying within the same session.
+ */
+const characterNameCache = new Map<string, string | null>();
+
+/**
+ * Resolve a character display name for a wallet address.
+ * Reuses the full tribe query path (same two GraphQL round-trips) and caches results
+ * so repeated calls for the same wallet within an app session are free.
+ * Returns null if not found or on any error.
+ */
+export async function queryCharacterNameFromChain(walletAddress: string): Promise<string | null> {
+  const key = walletAddress.trim().toLowerCase();
+  if (!key) return null;
+  if (characterNameCache.has(key)) return characterNameCache.get(key) ?? null;
+  const result = await queryPlayerTribeFromChain(walletAddress);
+  const name = result?.characterName ?? null;
+  characterNameCache.set(key, name);
+  return name;
 }
 
 function worldApiTribesUrl(baseUrl: string, tribeId: string): string {
@@ -300,12 +327,24 @@ function parseTribeFromCharacterResponse(json: unknown): PlayerTribeResult | nul
   const repr = contents.type?.repr ?? "";
   if (!repr.includes("::character::Character")) return null;
 
-  const tid = contents.json?.tribe_id;
+  const charJson = contents.json ?? {};
+
+  const tid = charJson.tribe_id;
+  let tribeId: string | null = null;
   if (typeof tid === "number" && Number.isFinite(tid) && tid > 0) {
-    return { tribeId: String(Math.trunc(tid)) };
+    tribeId = String(Math.trunc(tid));
+  } else if (typeof tid === "string" && tid.trim()) {
+    tribeId = tid.trim();
   }
-  if (typeof tid === "string" && tid.trim()) {
-    return { tribeId: tid.trim() };
+  if (!tribeId) return null;
+
+  // Character display name lives at Character.json.metadata.name (EVE Frontier on-chain struct)
+  const metadata = charJson.metadata;
+  let characterName: string | undefined;
+  if (metadata && typeof metadata === "object") {
+    const n = (metadata as Record<string, unknown>).name;
+    if (typeof n === "string" && n.trim()) characterName = n.trim();
   }
-  return null;
+
+  return { tribeId, ...(characterName ? { characterName } : {}) };
 }

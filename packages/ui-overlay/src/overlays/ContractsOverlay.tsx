@@ -1,20 +1,63 @@
 import React, { useCallback, useEffect, useState } from "react";
-import type { ContractBrowseSummary } from "@powerlay/core";
-import { comparePriority } from "./contractsOverlayUtils";
+import type { ContractBrowseSummary, ContractResourceLine } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
 
-function sortSummaries(list: ContractBrowseSummary[]): ContractBrowseSummary[] {
-  return [...list].sort((a, b) => {
-    const pr = comparePriority(a.contract.priority, b.contract.priority);
-    if (pr !== 0) return pr;
-    return b.contract.updatedAt - a.contract.updatedAt;
-  });
+function formatCompact(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(Math.round(n));
+}
+
+function ResourceLineBar({ line }: { line: ContractResourceLine }) {
+  const pct = line.requiredAmount > 0
+    ? Math.min(1, line.deliveredAmount / line.requiredAmount)
+    : 0;
+  const done = pct >= 1;
+  return (
+    <div className="flex items-center gap-2 text-[0.75rem]">
+      <span className={`min-w-[80px] truncate ${done ? "text-muted" : "text-text"}`}>
+        {line.resourceName}
+      </span>
+      <div className="flex-1 min-w-0 h-1 rounded-full bg-border/60 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${done ? "bg-muted" : "bg-blue-500"}`}
+          style={{ width: `${pct * 100}%` }}
+        />
+      </div>
+      <span className="shrink-0 text-muted tabular-nums">
+        {formatCompact(line.deliveredAmount)} / {formatCompact(line.requiredAmount)}
+      </span>
+    </div>
+  );
+}
+
+function ContractProgressCard({ summary }: { summary: ContractBrowseSummary }) {
+  const { contract: c, progressPercent } = summary;
+  const statusLabel = c.status === "in_progress" ? "active" : c.status;
+  return (
+    <li className="py-1.5 border-b border-border/50 last:border-b-0 flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2 text-[0.8rem]">
+        <span className="min-w-0 font-medium text-text truncate">{c.title}</span>
+        <span className="shrink-0 text-muted tabular-nums">{progressPercent}%</span>
+      </div>
+      <div className="flex items-center gap-1 text-[0.65rem] text-muted mb-0.5">
+        <span className="px-1 rounded bg-border-input/80">{statusLabel}</span>
+        <span className="truncate">{c.targetStarSystem || "—"}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {c.lines.map((line) => (
+          <ResourceLineBar key={line.id} line={line} />
+        ))}
+      </div>
+    </li>
+  );
 }
 
 export function ContractsOverlay() {
   const api = useEfOverlay();
-  const [rows, setRows] = useState<ContractBrowseSummary[]>([]);
+  const [joinedRows, setJoinedRows] = useState<ContractBrowseSummary[]>([]);
   const [backendOffline, setBackendOffline] = useState(false);
 
   const checkBackend = useCallback(async () => {
@@ -34,23 +77,20 @@ export function ContractsOverlay() {
   const load = useCallback(async () => {
     const c = api?.contracts;
     if (!c) {
-      setRows([]);
+      setJoinedRows([]);
       return;
     }
     try {
-      const session = await api?.auth?.getSession?.().catch(() => null);
-      const visibility = session?.tribeId ? [] : (["public"] as const);
-      const list = await c.search({
-        query: "",
-        filterMode: "title",
-        visibility,
-        priority: "all",
-      });
-      setRows(sortSummaries(list).slice(0, 12));
+      const joined = await c.listMyContracts?.("joined").catch(() => [] as ContractBrowseSummary[]);
+      setJoinedRows(
+        (joined ?? []).filter(
+          (r) => r.contract.status === "published" || r.contract.status === "in_progress"
+        )
+      );
     } catch (err) {
       console.error(err);
     }
-  }, [api?.contracts, api?.auth]);
+  }, [api?.contracts]);
 
   useEffect(() => {
     void checkBackend();
@@ -64,8 +104,6 @@ export function ContractsOverlay() {
     return () => clearInterval(id);
   }, [load]);
 
-  const vis = (v: string) => (v === "tribe" ? "Tribe" : v === "alliance" ? "Alliance" : "Public");
-
   return (
     <OverlayFrame
       title={
@@ -77,7 +115,7 @@ export function ContractsOverlay() {
         </>
       }
     >
-      {(locked) => (
+      {() => (
         <>
           {backendOffline && (
             <div
@@ -87,43 +125,17 @@ export function ContractsOverlay() {
               <div className="font-medium">Cannot connect to the Powerlay backend</div>
             </div>
           )}
-          <ul className="list-none p-0 m-0 max-h-[min(60vh,420px)] overflow-y-auto">
-          {rows.length === 0 ? (
-            <li className="py-1.5 text-muted italic text-[0.8rem]">No open contracts</li>
+          {joinedRows.length === 0 ? (
+            <p className="py-1.5 text-muted italic text-[0.8rem] m-0">
+              No active joined contracts. Use the Contracts section to find and join contracts.
+            </p>
           ) : (
-            rows.map(({ contract: c, progressPercent }) => (
-              <li key={c.id} className="py-1.5 border-b border-border/50 last:border-b-0 text-[0.8rem] flex flex-col gap-0.5">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="min-w-0 font-medium text-text truncate">{c.title}</span>
-                  <span className="shrink-0 text-muted">{progressPercent}%</span>
-                </div>
-                <div className="flex flex-wrap gap-1 text-[0.65rem] text-muted">
-                  <span className="px-1 rounded bg-border-input/80">{vis(c.visibility)}</span>
-                  <span>{c.priority}</span>
-                  <span className="truncate">{c.targetStarSystem}</span>
-                </div>
-                {!locked && api?.contracts && (
-                  <div className="flex gap-1 pt-0.5">
-                    <button
-                      type="button"
-                      className="overlay-no-drag px-2 py-0.5 text-[0.7rem] rounded border border-border-input bg-bg hover:bg-border"
-                      onClick={() => api.contracts!.join(c.id).then(load)}
-                    >
-                      Join
-                    </button>
-                    <button
-                      type="button"
-                      className="overlay-no-drag px-2 py-0.5 text-[0.7rem] rounded border border-border-input bg-bg hover:bg-border text-muted"
-                      onClick={() => api.contracts!.hide(c.id).then(load)}
-                    >
-                      Hide
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))
+            <ul className="list-none p-0 m-0">
+              {joinedRows.map((row) => (
+                <ContractProgressCard key={row.contract.id} summary={row} />
+              ))}
+            </ul>
           )}
-        </ul>
         </>
       )}
     </OverlayFrame>

@@ -78,9 +78,13 @@ function mapItem(it: BackendContractDetail["items"][0]): ContractResourceLine {
 }
 
 function mapParticipant(p: BackendParticipant, idx: number): ContractParticipant {
+  // Treat "string" as absent — it is the Pydantic OpenAPI default that sometimes ends up as
+  // legacy test data; real nicknames are user-set or resolved from chain.
+  const rawNick = p.nickname?.trim();
+  const nickname = rawNick && rawNick !== "string" ? rawNick : undefined;
   return {
     id: String(p.user_id ?? `p-${idx}`),
-    displayName: p.nickname?.trim() || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
+    displayName: nickname || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
     walletAddress: p.wallet_address ?? undefined,
     joinedAt: Date.parse(p.joined_at) || 0,
   };
@@ -172,11 +176,12 @@ export function mapListRowToBrowseSummary(row: BackendContractListRow): Contract
 
 export function mapTokenBalance(b: BackendTokenBalance): { balance: number; reserved: number; available: number } {
   const balance = decNum(b.balance);
-  return {
-    balance,
-    reserved: 0,
-    available: balance,
-  };
+  const reserved = decNum(b.reserved ?? b.reserved_balance);
+  // Prefer explicit available field; fall back to balance − reserved
+  const available = (b.available != null || b.available_balance != null)
+    ? decNum(b.available ?? b.available_balance)
+    : Math.max(0, balance - reserved);
+  return { balance, reserved, available };
 }
 
 export function mapContractStats(s: BackendContractStats): ContractStats {

@@ -31,6 +31,10 @@ const FRONTIER_WORLD_PACKAGE = {
 
 const FRONTIER_RESOURCES_DOC = "https://docs.evefrontier.com/tools/resources";
 
+/** Default World API base URLs — must match playerTribeFromChain.ts */
+const DEFAULT_WORLD_API_UTOPIA = "https://world-api-utopia.uat.pub.evefrontier.com";
+const DEFAULT_WORLD_API_STILLNESS = "https://world-api-stillness.live.tech.evefrontier.com";
+
 const CHAIN_IDENTIFIER_QUERY = `
   query ChainIdentifier {
     chainIdentifier
@@ -306,15 +310,20 @@ function resolveWorldApiBaseForPackageDebug(pkg) {
   };
 }
 
+/**
+ * @returns {{ tribeId: string | null, characterJson: Record<string, unknown> | null } | null}
+ */
 function parseTribeFromCharacterResponse(json) {
   const contents = json?.data?.object?.asMoveObject?.contents;
   if (!contents) return null;
   const repr = contents.type?.repr ?? "";
   if (!repr.includes("::character::Character")) return null;
-  const tid = contents.json?.tribe_id;
-  if (typeof tid === "number" && Number.isFinite(tid) && tid > 0) return String(Math.trunc(tid));
-  if (typeof tid === "string" && tid.trim()) return tid.trim();
-  return null;
+  const characterJson = contents.json ?? null;
+  const tid = characterJson?.tribe_id;
+  let tribeId = null;
+  if (typeof tid === "number" && Number.isFinite(tid) && tid > 0) tribeId = String(Math.trunc(tid));
+  else if (typeof tid === "string" && tid.trim()) tribeId = tid.trim();
+  return { tribeId, characterJson };
 }
 
 function summarizeObjects(json) {
@@ -498,10 +507,11 @@ async function main() {
       }
       console.log("");
 
-      let tribeId = null;
       if (characterId) {
+        console.log("--- Character object (raw JSON from chain) ---");
         const c2 = new AbortController();
         const t2 = setTimeout(() => c2.abort(), timeoutMs);
+        let characterResult = null;
         try {
           const r2 = await fetch(url, {
             method: "POST",
@@ -514,21 +524,55 @@ async function main() {
           });
           if (r2.ok) {
             const j2 = await r2.json();
-            if (!j2.errors?.length) tribeId = parseTribeFromCharacterResponse(j2);
+            if (!j2.errors?.length) characterResult = parseTribeFromCharacterResponse(j2);
           }
         } catch {
           /* ignore */
         } finally {
           clearTimeout(t2);
         }
-      }
-      if (tribeId) {
-        console.log("Resolved tribe_id (same as app X-Tribe-Id):", tribeId);
-        console.log("(Tribe display name is not stored on Character; only numeric tribe_id.)");
+
+        if (characterResult) {
+          console.log("Character object ID:", characterId);
+          console.log("All fields on Character.json (every key the Move object exposes):");
+          if (characterResult.characterJson) {
+            console.log(JSON.stringify(characterResult.characterJson, null, 2));
+          } else {
+            console.log("  (no json content)");
+          }
+          // Scan top-level and one level deep for name-like fields
+          const charObj = characterResult.characterJson ?? {};
+          const nameHits = [];
+          for (const [k, v] of Object.entries(charObj)) {
+            if (/name/i.test(k)) nameHits.push({ path: k, value: v });
+            if (v && typeof v === "object" && !Array.isArray(v)) {
+              for (const [k2, v2] of Object.entries(v)) {
+                if (/name/i.test(k2)) nameHits.push({ path: `${k}.${k2}`, value: v2 });
+              }
+            }
+          }
+          if (nameHits.length > 0) {
+            console.log("Name-like fields found:");
+            for (const h of nameHits) console.log(`  ${h.path}: ${JSON.stringify(h.value)}`);
+            console.log("→ Character name for app use: Character.json.metadata.name (if present)");
+          } else {
+            console.log("No 'name'-like fields found on this Character object (top-level + 1 deep).");
+            console.log("Hint: character display names may live in a separate SmartCharacter/EVE entity");
+            console.log("      object, or in the Frontier World API (not on-chain in this struct).");
+          }
+          if (characterResult.tribeId) {
+            console.log("Resolved tribe_id (same as app X-Tribe-Id):", characterResult.tribeId);
+          } else {
+            console.log("tribe_id: not found (no tribe_id field in Character.json on this endpoint).");
+          }
+        } else {
+          console.log("Could not parse Character object — missing asMoveObject.contents or not a ::character::Character type.");
+        }
+        console.log("");
       } else {
-        console.log("Tribe: could not resolve (no PlayerProfile/character_id or Character.tribe_id on this endpoint).");
+        console.log("Tribe: could not resolve (no PlayerProfile/character_id on this endpoint).");
+        console.log("");
       }
-      console.log("");
     }
   } else {
     console.log("Raw body (not JSON):");

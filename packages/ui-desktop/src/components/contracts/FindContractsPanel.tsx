@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { ConnectedStorage } from "../../preload";
 import type { ContractBrowseSummary, ContractVisibility, SearchContractsParams } from "@powerlay/core";
 import { contractProgressPercent, contractRewardCapTokens, contractRewardProgressTokens } from "@powerlay/core";
 import type { ContractsClient } from "../../services/contracts/contractsClient";
@@ -38,6 +39,15 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
   /** Error when fetching detail (e.g. CONTRACT_NOT_VISIBLE). */
   const [detailErrorById, setDetailErrorById] = useState<Record<string, string>>({});
   const [autoRefreshIds, setAutoRefreshIds] = useState<Set<string>>(loadAutoRefreshIds);
+  const [connectedStorages, setConnectedStorages] = useState<ConnectedStorage[]>([]);
+
+  useEffect(() => {
+    if (!window.efOverlay?.storage?.listConnected) return;
+    void window.efOverlay.storage
+      .listConnected()
+      .then(setConnectedStorages)
+      .catch(() => setConnectedStorages([]));
+  }, [expandedId]);
   const userSelectedVisibility = useMemo((): ContractVisibility[] => {
     const v: ContractVisibility[] = [];
     if (visTribe) v.push("tribe");
@@ -264,23 +274,37 @@ export function FindContractsPanel({ client, onRefreshBalance }: FindContractsPa
         <p className="text-sm text-muted m-0">No contracts match. Adjust filters or publish one in Create.</p>
       ) : (
         <ul className="list-none m-0 p-0 flex flex-col gap-2">
-          {list.map((summary) => (
-            <ContractCardRow
-              key={summary.contract.id}
-              summary={summaryForRow(summary)}
-              expanded={expandedId === summary.contract.id}
-              onToggleExpand={() => setExpandedId((id) => (id === summary.contract.id ? null : summary.contract.id))}
-              callsign={callsign}
-              userWallet={userWallet}
-              onJoin={() => handleJoin(summary.contract.id)}
-              onHide={() => handleHide(summary.contract.id)}
-              joining={joiningId === summary.contract.id}
-              assigneeMatch={assigneeMatchFor(summary.contract.id)}
-              detailError={detailErrorById[summary.contract.id]}
-              autoRefresh={autoRefreshIds.has(summary.contract.id)}
-              onAutoRefreshToggle={(next) => toggleAutoRefresh(summary.contract.id, next)}
-            />
-          ))}
+          {list.map((summary) => {
+            const merged = summaryForRow(summary);
+            const dc = merged.contract;
+            const sid = dc.targetSsuId?.trim() ?? "";
+            const hit = sid ? connectedStorages.find((s) => s.ssuObjectId === sid) : undefined;
+            const d = hit?.txHash?.trim();
+            const deliveryTxContext = sid ? { ssuObjectId: sid, ...(d ? { connectTxDigest: d } : {}) } : null;
+            return (
+              <ContractCardRow
+                key={summary.contract.id}
+                summary={merged}
+                expanded={expandedId === summary.contract.id}
+                onToggleExpand={() => setExpandedId((id) => (id === summary.contract.id ? null : summary.contract.id))}
+                callsign={callsign}
+                userWallet={userWallet}
+                onJoin={() => handleJoin(summary.contract.id)}
+                onHide={() => handleHide(summary.contract.id)}
+                joining={joiningId === summary.contract.id}
+                assigneeMatch={assigneeMatchFor(summary.contract.id)}
+                detailError={detailErrorById[summary.contract.id]}
+                autoRefresh={autoRefreshIds.has(summary.contract.id)}
+                onAutoRefreshToggle={(next) => toggleAutoRefresh(summary.contract.id, next)}
+                deliveryTxContext={deliveryTxContext}
+                onRefreshContractDetail={async () => {
+                  const fresh = await client.get(dc.id);
+                  if (fresh) setDetailById((prev) => ({ ...prev, [dc.id]: fresh }));
+                }}
+                onRefreshBalance={onRefreshBalance}
+              />
+            );
+          })}
         </ul>
       )}
     </div>
