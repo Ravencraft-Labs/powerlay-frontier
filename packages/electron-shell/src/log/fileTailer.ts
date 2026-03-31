@@ -31,7 +31,7 @@ type DirCheckResult =
   | { ok: false; reason: "not_directory"; resolvedPath: string }
   | { ok: false; reason: "no_txt_files"; resolvedPath: string; fileCount: number };
 
-export function checkLogDir(dir: string): DirCheckResult {
+export function checkLogDir(dir: string, fileFilter?: (filename: string) => boolean): DirCheckResult {
   const resolved = path.resolve(dir);
   try {
     if (!fs.existsSync(resolved)) {
@@ -42,7 +42,10 @@ export function checkLogDir(dir: string): DirCheckResult {
       return { ok: false, reason: "not_directory", resolvedPath: resolved };
     }
     const files = fs.readdirSync(resolved);
-    const txtFiles = files.filter((f) => f.toLowerCase().endsWith(".txt"));
+    const txtFiles = files.filter((f) => {
+      if (!f.toLowerCase().endsWith(".txt")) return false;
+      return fileFilter ? fileFilter(f) : true;
+    });
     let newest: { path: string; mtime: number } | null = null;
     for (const f of txtFiles) {
       const fp = path.join(resolved, f);
@@ -80,10 +83,12 @@ export interface FileTailerOptions {
   onLine: (line: string) => void;
   /** Called with error message when log dir is broken/empty; called with null to clear. */
   onError?: (err: string | null) => void;
+  /** Optional filter to restrict which .txt files are considered (e.g. Local_ only). */
+  fileFilter?: (filename: string) => boolean;
 }
 
 export function createFileTailer(options: FileTailerOptions): { start: () => void; stop: () => void } {
-  const { logDir: rawLogDir, pollIntervalMs = 1000, onLine, onError } = options;
+  const { logDir: rawLogDir, pollIntervalMs = 1000, onLine, onError, fileFilter } = options;
   const logDir = expandPath(rawLogDir);
 
   const state: TailerState = {
@@ -105,7 +110,7 @@ export function createFileTailer(options: FileTailerOptions): { start: () => voi
   }
 
   function poll(): void {
-    const check = checkLogDir(logDir);
+    const check = checkLogDir(logDir, fileFilter);
 
     if (!check.ok) {
       const msg =

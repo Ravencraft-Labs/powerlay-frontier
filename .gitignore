@@ -12,6 +12,8 @@ data/
 # Cursor / IDE
 .cursorrules
 .cursor/
+.claude
+help_db
 
 # Debug logs
 debug-*.log
@@ -32,3 +34,5 @@ release/
 
 # Root shell scripts
 /*.sh
+
+CLAUDE.md

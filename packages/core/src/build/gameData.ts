@@ -37,12 +37,27 @@ export interface TypeNameEntry {
   name: string;
 }
 
+/** Strip zero-width / BOM and NBSP for display and matching. */
+export function normalizeTypeDisplayName(name: string): string {
+  return name
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .trim();
+}
+
+/** Filters internal SDE rows (#System), invisible-only labels, and non-alphanumeric symbols-only names. */
+export function isDisplayableContractResourceName(normalizedName: string): boolean {
+  if (normalizedName.length < 2) return false;
+  if (normalizedName.startsWith("#")) return false;
+  return /[\p{L}\p{N}]/u.test(normalizedName);
+}
+
 export function searchTypesByName(
   types: TypesMap,
   query: string,
-  options: { volumeMin?: number } = {}
+  options: { volumeMin?: number; preferTypeIds?: Set<number> } = {}
 ): TypeNameEntry[] {
-  const { volumeMin = 0 } = options;
+  const { volumeMin = 0, preferTypeIds } = options;
   const q = query.trim().toLowerCase();
   const result: TypeNameEntry[] = [];
   for (const key of Object.keys(types)) {
@@ -53,7 +68,86 @@ export function searchTypesByName(
       result.push({ typeID: t.typeID, name });
     }
   }
+  if (preferTypeIds && result.length > 0) {
+    const byName = new Map<string, TypeNameEntry[]>();
+    for (const m of result) {
+      const key = m.name.toLowerCase();
+      const list = byName.get(key) ?? [];
+      list.push(m);
+      byName.set(key, list);
+    }
+    const deduped: TypeNameEntry[] = [];
+    for (const group of byName.values()) {
+      const preferred = group.find((m) => preferTypeIds.has(m.typeID));
+      if (!preferred) continue; // skip names with no producible type
+      deduped.push(preferred);
+    }
+    return deduped.sort((a, b) => a.name.localeCompare(b.name, "en"));
+  }
   return result;
+}
+
+/** Type IDs that appear in manufacturing (materials = haul inputs; products = outputs with volume gate). */
+export function collectBlueprintParticipantTypeIds(blueprints: BlueprintsMap): {
+  materialTypeIds: Set<number>;
+  productTypeIds: Set<number>;
+} {
+  const materialTypeIds = new Set<number>();
+  const productTypeIds = new Set<number>();
+  for (const bp of Object.values(blueprints)) {
+    const mfg = bp?.activities?.manufacturing;
+    if (!mfg?.materials?.length) continue;
+    for (const m of mfg.materials) materialTypeIds.add(m.typeID);
+    for (const p of mfg.products ?? []) productTypeIds.add(p.typeID);
+  }
+  return { materialTypeIds, productTypeIds };
+}
+
+/**
+ * Types suitable for logistics contract resource lines:
+ * - **Ores** (`groupID` in `oreGroupIDs`, tiny m³ allowed).
+ * - When **`blueprints`** is non-empty (normal app): **manufacturing materials** (always) and **products**
+ *   only if `volume > 1` (same cutoff as builder `volumeMin: 1`), matching what industry actually uses.
+ * - If blueprints are missing/empty: fall back to ores + any type with `volume > 1` (legacy).
+ * - Drops junk display names via {@link isDisplayableContractResourceName}.
+ */
+export function searchTypesForContractResources(
+  types: TypesMap,
+  query: string,
+  oreGroupIDs?: number[] | null,
+  blueprints?: BlueprintsMap | null
+): TypeNameEntry[] {
+  const oreSet =
+    oreGroupIDs != null && oreGroupIDs.length > 0 ? new Set(oreGroupIDs) : null;
+  const bpParticipants =
+    blueprints && Object.keys(blueprints).length > 0
+      ? collectBlueprintParticipantTypeIds(blueprints)
+      : null;
+  const q = query.trim().toLowerCase();
+  const result: TypeNameEntry[] = [];
+  for (const key of Object.keys(types)) {
+    const t = types[key];
+    const name = normalizeTypeDisplayName(t.name ?? "");
+    if (!isDisplayableContractResourceName(name)) continue;
+
+    const isOre = oreSet != null && oreSet.has(t.groupID);
+    const isSimpleResource = t.volume == null || t.volume > 1;
+
+    let passesKind: boolean;
+    if (bpParticipants) {
+      const inMat = bpParticipants.materialTypeIds.has(t.typeID);
+      const inProd = bpParticipants.productTypeIds.has(t.typeID);
+      passesKind = isOre || inMat || (inProd && isSimpleResource);
+    } else {
+      passesKind = isOre || isSimpleResource;
+    }
+    if (!passesKind) continue;
+
+    if (!q || name.toLowerCase().includes(q)) {
+      result.push({ typeID: t.typeID, name });
+    }
+  }
+  return result.sort((a, b) => a.name.localeCompare(b.name, "en"));
 }
 
 export function getProducibleTypeIds(
@@ -65,6 +159,7 @@ export function getProducibleTypeIds(
     const bp = blueprints[_key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // only types with ingredients
     for (const p of mfg.products) {
       productTypeIds.add(p.typeID);
     }
@@ -87,6 +182,7 @@ export function getBlueprintForProduct(
     const bp = blueprints[key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // skip blueprints with no ingredients
     const hasProduct = mfg.products.some((p) => p.typeID === productTypeID);
     if (!hasProduct) continue;
     if (bp.blueprintTypeID === productTypeID) return bp;
@@ -95,7 +191,7 @@ export function getBlueprintForProduct(
   return fallback;
 }
 
-/** All blueprints whose manufacturing products include productTypeID. */
+/** All blueprints whose manufacturing products include productTypeID. Excludes blueprints with no ingredients. */
 export function getBlueprintsForProduct(
   productTypeID: number,
   blueprints: BlueprintsMap
@@ -105,6 +201,7 @@ export function getBlueprintsForProduct(
     const bp = blueprints[key];
     const mfg = bp?.activities?.manufacturing;
     if (!mfg?.products?.length) continue;
+    if (!mfg?.materials?.length) continue; // skip blueprints with no ingredients
     if (mfg.products.some((p) => p.typeID === productTypeID)) result.push(bp);
   }
   return result;
@@ -286,7 +383,8 @@ export function getBlueprintOptionsForProduct(
       _recipeKey: recipeKey(materials),
     };
   });
-  const sorted = withTierAndSum.sort(
+  const withInputs = withTierAndSum.filter((x) => (x.inputTypeIDs?.length ?? 0) > 0);
+  const sorted = withInputs.sort(
     (a, b) => a.tier - b.tier || a.baseOrePerUnit - b.baseOrePerUnit
   );
   const seen = new Set<string>();

@@ -4,6 +4,11 @@ import {
   getBlueprintOptionsForProduct,
   getOptimizedBlueprintForProduct,
   getMaterialsPerUnitProduct,
+  getProducibleTypeIds,
+  searchTypesByName,
+  searchTypesForContractResources,
+  normalizeTypeDisplayName,
+  isDisplayableContractResourceName,
   BASE_ORE_TYPE_IDS,
 } from "./gameData";
 import type { TypesMap, BlueprintsMap } from "./types";
@@ -379,6 +384,117 @@ describe("tiered ore optimization", () => {
     expect(options[0].isOptimized).toBe(true);
     expect(options[1].blueprintTypeID).toBe(202);
     expect(options[1].isOptimized).toBe(false);
+  });
+});
+
+describe("searchTypesByName", () => {
+  it("deduplicates by name preferring producible types when preferTypeIds provided", () => {
+    const types = makeTypes([
+      { typeID: 87120, name: "Heavy Printer" },
+      { typeID: 91702, name: "Heavy Printer" },
+      { typeID: 100, name: "Other" },
+    ]);
+    const preferTypeIds = new Set([87120]);
+    const result = searchTypesByName(types, "heavy printer", { preferTypeIds });
+    expect(result).toHaveLength(1);
+    expect(result[0].typeID).toBe(87120);
+    expect(result[0].name).toBe("Heavy Printer");
+  });
+
+  it("excludes names with no producible type when preferTypeIds provided", () => {
+    const types = makeTypes([
+      { typeID: 1001, name: "Advanced Large Ship Assembly Array" },
+      { typeID: 1002, name: "Thukker Component Assembly Facility" },
+    ]);
+    const preferTypeIds = new Set<number>();
+    const result = searchTypesByName(types, "assembly", { preferTypeIds });
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("searchTypesForContractResources", () => {
+  it("drops blank names and tiny-volume types that are not ores", () => {
+    const types: TypesMap = {
+      "1": { typeID: 1, name: "   ", groupID: 0, mass: 1, volume: 50, basePrice: 0, portionSize: 1 },
+      "2": { typeID: 2, name: "Micro junk", groupID: 0, mass: 1, volume: 0.01, basePrice: 0, portionSize: 1 },
+      "3": { typeID: 3, name: "Cargo Bay", groupID: 0, mass: 1, volume: 20, basePrice: 0, portionSize: 1 },
+    };
+    const result = searchTypesForContractResources(types, "cargo", []);
+    expect(result.map((r) => r.typeID).sort((a, b) => a - b)).toEqual([3]);
+  });
+
+  it("includes ores when groupID is in oreGroupIDs despite tiny volume", () => {
+    const types: TypesMap = {
+      "1": { typeID: 1, name: "Feldspar", groupID: 450, mass: 1, volume: 0.01, basePrice: 0, portionSize: 1 },
+      "2": { typeID: 2, name: "Micro junk", groupID: 0, mass: 1, volume: 0.01, basePrice: 0, portionSize: 1 },
+    };
+    const result = searchTypesForContractResources(types, "feld", [450]);
+    expect(result).toHaveLength(1);
+    expect(result[0].typeID).toBe(1);
+  });
+
+  it("filters by query substring", () => {
+    const types: TypesMap = {
+      "1": { typeID: 1, name: "Alpha Widget", groupID: 0, mass: 1, volume: 5, basePrice: 0, portionSize: 1 },
+      "2": { typeID: 2, name: "Beta Widget", groupID: 0, mass: 1, volume: 5, basePrice: 0, portionSize: 1 },
+    };
+    const result = searchTypesForContractResources(types, "alpha", []);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Alpha Widget");
+  });
+
+  it("excludes # internal SDE names and symbol-only labels", () => {
+    const types: TypesMap = {
+      "1": { typeID: 1, name: "#System", groupID: 0, mass: 1, volume: 50, basePrice: 0, portionSize: 1 },
+      "2": { typeID: 2, name: "♦♦♦", groupID: 0, mass: 1, volume: 50, basePrice: 0, portionSize: 1 },
+      "3": { typeID: 3, name: "Real Good", groupID: 0, mass: 1, volume: 50, basePrice: 0, portionSize: 1 },
+    };
+    expect(searchTypesForContractResources(types, "real", [])).toHaveLength(1);
+    expect(searchTypesForContractResources(types, "sys", [])).toHaveLength(0);
+  });
+
+  it("normalizes zero-width characters in names", () => {
+    expect(normalizeTypeDisplayName("A\u200BB")).toBe("AB");
+    expect(isDisplayableContractResourceName(normalizeTypeDisplayName("A\u200BB"))).toBe(true);
+  });
+
+  it("with blueprints, keeps ores, blueprint materials, and only large-volume blueprint products", () => {
+    const types: TypesMap = {
+      "100": { typeID: 100, name: "Input Only", groupID: 0, mass: 1, volume: 0.01, basePrice: 0, portionSize: 1 },
+      "200": { typeID: 200, name: "Tiny Product", groupID: 0, mass: 1, volume: 0.01, basePrice: 0, portionSize: 1 },
+      "201": { typeID: 201, name: "Big Product", groupID: 0, mass: 1, volume: 10, basePrice: 0, portionSize: 1 },
+      "300": { typeID: 300, name: "Stranger", groupID: 0, mass: 1, volume: 50, basePrice: 0, portionSize: 1 },
+    };
+    const blueprints = makeBlueprints([
+      { blueprintTypeID: 1, productTypeID: 200, productQty: 1, materials: [{ typeID: 100, quantity: 1 }] },
+      { blueprintTypeID: 2, productTypeID: 201, productQty: 1, materials: [{ typeID: 100, quantity: 1 }] },
+    ]);
+    const r = searchTypesForContractResources(types, "", [], blueprints);
+    const ids = new Set(r.map((x) => x.typeID));
+    expect(ids.has(100)).toBe(true);
+    expect(ids.has(200)).toBe(false);
+    expect(ids.has(201)).toBe(true);
+    expect(ids.has(300)).toBe(false);
+  });
+});
+
+describe("getProducibleTypeIds", () => {
+  it("excludes types whose only blueprint has no ingredients", () => {
+    const types = makeTypes([
+      { typeID: 1001, name: "Advanced Large Ship Assembly Array" },
+      { typeID: 1002, name: "Thukker Component Assembly Facility" },
+      { typeID: 87120, name: "Heavy Printer" },
+    ]);
+    const blueprints = makeBlueprints([
+      { blueprintTypeID: 1001, productTypeID: 1001, productQty: 1, materials: [] },
+      { blueprintTypeID: 1002, productTypeID: 1002, productQty: 1, materials: [] },
+      { blueprintTypeID: 87120, productTypeID: 87120, productQty: 1, materials: [{ typeID: 89089, quantity: 100 }] },
+    ]);
+    const result = getProducibleTypeIds(types, blueprints);
+    const names = result.map((r) => r.name);
+    expect(names).not.toContain("Advanced Large Ship Assembly Array");
+    expect(names).not.toContain("Thukker Component Assembly Facility");
+    expect(names).toContain("Heavy Printer");
   });
 });
 

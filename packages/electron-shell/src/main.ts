@@ -2,10 +2,16 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, scree
 import path from "path";
 import fs from "fs";
 import { registerTodoHandlers } from "./ipc/todoHandlers.js";
+import { registerContractsHandlers } from "./ipc/contractsHandlers.js";
 import { registerBuildHandlers } from "./ipc/buildHandlers.js";
 import { registerGameDataHandlers } from "./ipc/gameDataHandlers.js";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers.js";
 import { registerMiningHandlers } from "./ipc/miningHandlers.js";
+import { startAuthServer } from "./auth/authServer.js";
+import { registerAuthHandlers } from "./ipc/authHandlers.js";
+import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
+import { registerScoutHandlers } from "./ipc/scoutHandlers.js";
+import { registerStorageHandlers } from "./ipc/storageHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -16,9 +22,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-type OverlayFrame = "todo" | "builder";
+type OverlayFrame = "contracts" | "builder" | "scout";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { todo: false, builder: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -50,8 +56,9 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["todo", "builder"] as OverlayFrame[]) {
-      const b = data[f];
+    for (const f of ["contracts", "builder", "scout"] as OverlayFrame[]) {
+      let b = data[f];
+      if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
         try {
           const display = screen.getDisplayMatching({ x: b.x!, y: b.y!, width: b.width!, height: b.height! });
@@ -400,6 +407,16 @@ app.whenReady().then(async () => {
   registerSettingsHandlers();
   registerMiningHandlers();
 
+  const authServer = await startAuthServer();
+  registerContractsHandlers(authServer);
+  registerAuthHandlers(authServer, () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+  registerTribeHandlers();
+  registerScoutHandlers();
+  registerStorageHandlers(authServer);
+
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();
     const result = await shell.openPath(dir);
@@ -445,8 +462,12 @@ app.whenReady().then(async () => {
 
   const iconPath = getIconPath();
   if (iconPath) {
-    const icon = nativeImage.createFromPath(iconPath);
+    let icon = nativeImage.createFromPath(iconPath);
     if (!icon.isEmpty()) {
+      if (process.platform === "darwin") {
+        icon = icon.resize({ width: 16, height: 16 });
+        icon.setTemplateImage(true);
+      }
       tray = new Tray(icon);
       tray.setToolTip("Powerlay Frontier");
       tray.on("click", () => {
@@ -502,6 +523,12 @@ ipcMain.handle("overlay:toggle", (_event, frame: OverlayFrame) => {
   else w.show();
 });
 
+ipcMain.handle("overlay:toggle-scout", () => {
+  const w = getOrCreateOverlayWindow("scout");
+  if (w.isVisible()) w.hide();
+  else w.show();
+});
+
 ipcMain.handle("overlay:toggle-builder", (_event, buildId: string) => {
   const w = getOrCreateBuilderOverlayWindow(buildId);
   if (w.isVisible()) w.hide();
@@ -518,7 +545,7 @@ ipcMain.handle("overlay:get-visible-builder-ids", () => {
 
 ipcMain.handle("overlay:show", (_event, frame: OverlayFrame) => {
   if (frame === "builder") return;
-  getOrCreateOverlayWindow(frame).show();
+  getOrCreateOverlayWindow(frame as Exclude<OverlayFrame, "builder">).show();
 });
 
 ipcMain.handle("overlay:hide", (_event, frame: OverlayFrame, buildId?: string) => {
@@ -540,6 +567,11 @@ ipcMain.handle("overlay:get-builder-state", (_event, buildId: string) => {
 
 ipcMain.on("overlay:set-builder-state", (_event, states: Record<string, BuilderOverlayState>) => {
   builderOverlayStateByBuild = states && typeof states === "object" ? { ...states } : {};
+});
+
+ipcMain.handle("overlay:get-visible", (_event, frame: OverlayFrame) => {
+  const w = overlayWindows[frame];
+  return w && !w.isDestroyed() && w.isVisible();
 });
 
 ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame, buildId?: string) => {
