@@ -4,7 +4,7 @@
  * for `StorageConfig` objects matching an SSU (`storage_unit_id`).
  */
 import { getEffectiveEfGraphqlUrl, getPlayerTribeFetchTimeoutMs } from "./playerTribeFromChain.js";
-import { POWERLAY_STORAGE_PACKAGE_ID } from "../storage/storageConfig.js";
+import { getPowerlayStoragePackageId } from "../storage/storageConfig.js";
 import { appLog } from "../log/appLogger.js";
 
 const DEFAULT_SUI_RPC = "https://rpc.testnet.sui.io";
@@ -78,7 +78,7 @@ const LEGACY_POWERLAY_STORAGE_PACKAGE_ID =
   "0x71209391e483f34d27b72e07b4559909ea37d970e7f9e0d4fb712ae1fffa17b3";
 
 function powerlayStorageConfigStructTypes(): string[] {
-  const cur = POWERLAY_STORAGE_PACKAGE_ID.trim();
+  const cur = getPowerlayStoragePackageId().trim();
   const legacy = LEGACY_POWERLAY_STORAGE_PACKAGE_ID.trim();
   const set = new Set<string>();
   set.add(`${cur}::powerlay_storage::StorageConfig`);
@@ -214,7 +214,7 @@ export async function resolveStorageConfigObjectIdForSsu(
 
 /**
  * Returns a created `StorageConfig` object id from the transaction. Prefers the instance
- * whose defining package matches {@link POWERLAY_STORAGE_PACKAGE_ID}.
+ * whose defining package matches the active Powerlay storage package.
  */
 export async function resolveStorageConfigObjectIdFromConnectTx(txDigest: string): Promise<string | null> {
   const digest = txDigest?.trim();
@@ -251,7 +251,7 @@ export async function resolveStorageConfigObjectIdFromConnectTx(txDigest: string
       return null;
     }
     const changes = json.result?.objectChanges ?? [];
-    const wantPkg = normalizePkg(POWERLAY_STORAGE_PACKAGE_ID);
+    const wantPkg = normalizePkg(getPowerlayStoragePackageId());
     let fallback: string | null = null;
     for (const ch of changes) {
       if (ch.type !== "created") continue;

@@ -52,7 +52,7 @@ import { Transaction } from "@mysten/sui/transactions";
  * `powerlay_storage` Move package.
  */
 export const POWERLAY_STORAGE_PACKAGE_ID =
-  "0x95a12684424d9b10d6ad602be7112159aa1b4e165bd3853653f025049f2a4c76";
+  "0xb5b0006235c1f27542c6efc1d60778e719f71e254ea3000fca131f8f92f19522";
 
 /**
  * The Sui network to target when signing transactions.

@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
     signDeliveryTx: (params: unknown) => ipcRenderer.invoke("contracts:sign-delivery-tx", params),
     recordDelivery: (contractId: string, body: unknown) =>
       ipcRenderer.invoke("contracts:record-delivery", contractId, body),
+    submitDepositAttempt: (contractId: string, body: unknown) =>
+      ipcRenderer.invoke("contracts:submit-deposit-attempt", contractId, body),
   },
   storage: {
     listConnected: () => ipcRenderer.invoke("storage:list-connected"),
@@ -77,7 +79,13 @@ contextBridge.exposeInMainWorld("efOverlay", {
   },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
-    set: (settings: { gameLogDir?: string; skipLogPrompt?: boolean }) =>
+    set: (settings: {
+      gameLogDir?: string;
+      skipLogPrompt?: boolean;
+      worldContractsPackageId?: string;
+      contractsApiBase?: string;
+      storageApiBase?: string;
+    }) =>
       ipcRenderer.invoke("settings:set", settings),
   },
   app: {

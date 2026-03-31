@@ -16,6 +16,7 @@ export interface ConnectStorageSignTxParams {
   storageUnitId: string;
   ownerCapId: string;
   tribeId: string;
+  walletAddress?: string;
   characterId?: string;
   worldPackageId?: string;
   powerlayPackageId: string;
@@ -26,6 +27,7 @@ export interface ContractDeliverySignTxParams {
   kind: "contract_delivery";
   storageConfigObjectId: string;
   storageUnitId: string;
+  walletAddress?: string;
   characterId: string;
   delivererCharacterOwnerCapId: string;
   /** u64 as decimal string */

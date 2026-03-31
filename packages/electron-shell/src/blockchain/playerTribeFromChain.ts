@@ -18,6 +18,7 @@
  *
  * @see docs/contracts-integration.md
  */
+import { loadSettings } from "../ipc/settingsStore.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_WORLD_API_TIMEOUT_MS = 8_000;
@@ -313,6 +314,26 @@ function pickPlayerProfileForTribe(
 ): { characterId: string; packageKind: PlayerProfilePackageKind } | null {
   if (profiles.length === 0) return null;
   if (profiles.length === 1) return profiles[0];
+
+  const worldPkg = loadSettings().worldContractsPackageId?.trim().toLowerCase() ?? "";
+  const preferStillness = worldPkg === FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase();
+  const preferUtopia = worldPkg === FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase();
+
+  if (preferStillness) {
+    const s = profiles.find((x) => x.packageKind === "stillness");
+    if (s) return s;
+    const u = profiles.find((x) => x.packageKind === "utopia");
+    if (u) return u;
+  }
+
+  if (preferUtopia) {
+    const u = profiles.find((x) => x.packageKind === "utopia");
+    if (u) return u;
+    const s = profiles.find((x) => x.packageKind === "stillness");
+    if (s) return s;
+  }
+
+  // Backward-compatible fallback when no explicit world package preference is configured.
   const u = profiles.find((x) => x.packageKind === "utopia");
   if (u) return u;
   const s = profiles.find((x) => x.packageKind === "stillness");

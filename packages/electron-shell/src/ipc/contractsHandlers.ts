@@ -8,7 +8,7 @@ import type {
 } from "@powerlay/core";
 import type { AuthServerResult } from "../auth/authServer.js";
 import { loadSession } from "../auth/sessionStore.js";
-import { FRONTIER_WORLD_PACKAGE_UTOPIA } from "../blockchain/playerTribeFromChain.js";
+import { FRONTIER_WORLD_PACKAGE_STILLNESS } from "../blockchain/playerTribeFromChain.js";
 import {
   resolveStorageConfigObjectIdForSsu,
   resolveStorageConfigObjectIdFromConnectTx,
@@ -16,8 +16,9 @@ import {
 import { getPowerlayApiBaseUrl } from "../contracts/contractsApiConfig.js";
 import { getContractsHttpBackend, type ContractsHttpBackend } from "../contracts/contractsHttpBackend.js";
 import { fetchCharacterOwnerCapId } from "../storage/suiStorageDiscovery.js";
-import { POWERLAY_STORAGE_PACKAGE_ID } from "../storage/storageConfig.js";
+import { getPowerlayStoragePackageId } from "../storage/storageConfig.js";
 import { appLog } from "../log/appLogger.js";
+import { loadSettings } from "./settingsStore.js";
 
 const SIGN_TX_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -224,7 +225,9 @@ export function registerContractsHandlers(authServer: AuthServerResult): void {
         return { error: "Could not read owner_cap_id from your Character object on-chain." };
       }
 
-      const worldPackageId = params.worldPackageId?.trim() || FRONTIER_WORLD_PACKAGE_UTOPIA;
+      const settingsWorldPkg = loadSettings().worldContractsPackageId?.trim();
+      const worldPackageId = params.worldPackageId?.trim() || settingsWorldPkg || FRONTIER_WORLD_PACKAGE_STILLNESS;
+      const powerlayPackageId = getPowerlayStoragePackageId();
       const useCharacterCapBorrow = params.useCharacterCapBorrow !== false;
 
       appLog.info("[delivery:ipc] opening sign-tx page", {
@@ -236,7 +239,7 @@ export function registerContractsHandlers(authServer: AuthServerResult): void {
         typeId,
         quantity: qty,
         worldPackageId,
-        powerlayPackageId: POWERLAY_STORAGE_PACKAGE_ID,
+        powerlayPackageId,
         useCharacterCapBorrow,
         note:
           "If chain aborts EItemDoesNotExist, withdraw_by_owner found no stack for typeId in the DF keyed by delivererCharacterOwnerCapId on this SSU.",
@@ -257,12 +260,13 @@ export function registerContractsHandlers(authServer: AuthServerResult): void {
             kind: "contract_delivery",
             storageConfigObjectId,
             storageUnitId: su,
+            walletAddress: session?.walletAddress?.trim() || undefined,
             characterId,
             delivererCharacterOwnerCapId,
             typeId: String(Math.floor(typeId)),
             quantity: qty,
             worldPackageId,
-            powerlayPackageId: POWERLAY_STORAGE_PACKAGE_ID,
+            powerlayPackageId,
             useCharacterCapBorrow,
           },
           (digest) => {
@@ -304,6 +308,26 @@ export function registerContractsHandlers(authServer: AuthServerResult): void {
         return await getContractsService().recordDelivery(contractId.trim(), body);
       } catch (err) {
         console.error("[contracts] record-delivery failed", err);
+        throw err;
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "contracts:submit-deposit-attempt",
+    async (
+      _e,
+      contractId: string,
+      body: {
+        txDigest: string;
+        typeId: number;
+        requestedQty: number;
+      }
+    ) => {
+      try {
+        return await getContractsService().submitDepositAttempt(contractId.trim(), body);
+      } catch (err) {
+        console.error("[contracts] submit-deposit-attempt failed", err);
         throw err;
       }
     }

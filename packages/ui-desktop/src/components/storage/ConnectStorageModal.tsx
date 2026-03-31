@@ -19,14 +19,15 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { ConnectedStorage, StorageHistoryEntry, WalletSsu } from "../../preload";
+import { useAuth } from "../../context/AuthContext";
 import { useContractsAccess } from "../../context/ContractsAccessContext";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** World-contracts Utopia package — used for Character-owned OwnerCap PTB path. */
-const WORLD_PACKAGE_ID = "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
+/** Stillness world package (default; can be overridden in Settings). */
+const DEFAULT_WORLD_PACKAGE_ID = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
 
 function shortId(id: string): string {
   if (id.length <= 16) return id;
@@ -131,7 +132,13 @@ export interface ConnectStorageModalProps {
 }
 
 export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
-  const { tribeId } = useContractsAccess();
+  const { session } = useAuth();
+  const { tribeId, status: tribeStatus, refreshTribe, errorMessage: tribeError } = useContractsAccess();
+
+  const walletConnected = Boolean(session?.walletAddress);
+  const tribeReady = Boolean(tribeId?.trim());
+  /** Powerlay storage HTTP calls require X-Tribe-Id; character_id for POST comes from session after tribe resolve. */
+  const canUseStorageApi = walletConnected && tribeReady;
 
   const [view, setView] = useState<View>("list");
   const [connectedStorages, setConnectedStorages] = useState<ConnectedStorage[]>([]);
@@ -145,12 +152,21 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
   const [historyStorage, setHistoryStorage] = useState<ConnectedStorage | null>(null);
   const [historyItems, setHistoryItems] = useState<StorageHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [worldPackageId, setWorldPackageId] = useState(DEFAULT_WORLD_PACKAGE_ID);
 
   // ---------------------------------------------------------------------------
   // Load connected storages on mount
   // ---------------------------------------------------------------------------
 
   const loadConnected = useCallback(async () => {
+    if (!walletConnected) {
+      setConnectedStorages([]);
+      return;
+    }
+    if (!tribeReady) {
+      setConnectedStorages([]);
+      return;
+    }
     if (!window.efOverlay?.storage) return;
     try {
       const list = await window.efOverlay.storage.listConnected();
@@ -158,11 +174,25 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
     } catch (e) {
       console.error("[ConnectStorageModal] list-connected failed", e);
     }
-  }, []);
+  }, [walletConnected, tribeReady]);
+
+  useEffect(() => {
+    if (walletConnected) void refreshTribe();
+  }, [walletConnected, refreshTribe]);
 
   useEffect(() => {
     void loadConnected();
   }, [loadConnected]);
+
+  useEffect(() => {
+    if (!window.efOverlay?.settings?.get) return;
+    void window.efOverlay.settings.get().then((s) => {
+      const v = s.worldContractsPackageId?.trim();
+      setWorldPackageId(v || DEFAULT_WORLD_PACKAGE_ID);
+    }).catch(() => {
+      setWorldPackageId(DEFAULT_WORLD_PACKAGE_ID);
+    });
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Add view — discover wallet SSUs
@@ -170,6 +200,17 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
 
   const openAddView = async () => {
     setError(null);
+    if (!walletConnected) {
+      setError("Connect your wallet in the app header first.");
+      return;
+    }
+    if (!tribeReady) {
+      setError(
+        tribeError ??
+          "Resolve your tribe (wait until it appears under Contracts) before connecting storage — the API needs tribe context and your character id."
+      );
+      return;
+    }
     setSelectedSsu(null);
     setManualSsuId("");
     setStorageName("");
@@ -191,6 +232,14 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
 
   const handleConnect = async () => {
     setError(null);
+    if (!walletConnected) {
+      setError("Connect your wallet in the app header first.");
+      return;
+    }
+    if (!tribeReady) {
+      setError("Tribe context is required for storage. Wait until your tribe is shown under Contracts, then try again.");
+      return;
+    }
 
     const effectiveSsuId = selectedSsu?.storageUnitId ?? manualSsuId.trim();
     const effectiveOwnerCapId = selectedSsu?.ownerCapId ?? "";
@@ -220,7 +269,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
         storageUnitId: effectiveSsuId,
         ownerCapId: effectiveOwnerCapId,
         tribeId: String(tribeId ?? "0"),
-        worldPackageId: WORLD_PACKAGE_ID,
+        worldPackageId,
       });
       if ("error" in result) {
         setError(`On-chain transaction failed: ${result.error}`);
@@ -257,6 +306,10 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
   // ---------------------------------------------------------------------------
 
   const handleDisconnect = async (ssuObjectId: string) => {
+    if (!walletConnected || !tribeReady) {
+      setError("Connect your wallet and resolve your tribe before disconnecting storage.");
+      return;
+    }
     if (!window.efOverlay?.storage) return;
     setDisconnecting(ssuObjectId);
     setError(null);
@@ -276,6 +329,10 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
   // ---------------------------------------------------------------------------
 
   const openHistory = async (s: ConnectedStorage) => {
+    if (!walletConnected || !tribeReady) {
+      setError("Connect your wallet and resolve your tribe to view storage history.");
+      return;
+    }
     setHistoryStorage(s);
     setHistoryItems([]);
     setHistoryLoading(true);
@@ -334,10 +391,41 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
           </div>
         )}
 
+        {!walletConnected && (
+          <div className="mb-3 rounded-md border border-border/60 bg-border/20 px-3 py-3 text-sm text-muted">
+            <p className="m-0 text-text font-medium">Wallet not connected</p>
+            <p className="m-0 mt-2 leading-relaxed">
+              Use <span className="text-text font-medium">Connect wallet</span> in the app header, then open Connect storage again.
+            </p>
+          </div>
+        )}
+
+        {walletConnected && tribeStatus === "loading" && (
+          <p className="text-xs text-muted m-0 mb-3" role="status">
+            Resolving tribe for storage…
+          </p>
+        )}
+
+        {walletConnected && tribeStatus !== "loading" && !tribeReady && (
+          <div className="mb-3 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed">
+            <p className="m-0 font-medium text-amber-100">Tribe context required</p>
+            <p className="m-0 mt-1 text-muted">
+              {tribeError ??
+                "The storage API needs your tribe (and saves your character id for registration). Wait until your tribe appears in the Contracts section above, then try again."}
+            </p>
+          </div>
+        )}
+
+        {walletConnected && session?.characterId && tribeReady && (
+          <p className="text-[0.65rem] text-muted m-0 mb-2 font-mono truncate" title={session.characterId}>
+            Character linked · {shortId(session.characterId)}
+          </p>
+        )}
+
         {/* ------------------------------------------------------------------ */}
         {/* LIST view                                                           */}
         {/* ------------------------------------------------------------------ */}
-        {view === "list" && (
+        {walletConnected && view === "list" && (
           <div className="flex flex-col gap-3">
             {connectedStorages.length === 0 ? (
               <p className="text-sm text-muted m-0">
@@ -368,6 +456,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
                       <button
                         type="button"
                         className={btnCls + " text-xs py-1 px-2"}
+                        disabled={!canUseStorageApi}
                         onClick={() => void openHistory(s)}
                       >
                         History
@@ -375,7 +464,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
                       <button
                         type="button"
                         className={dangerCls}
-                        disabled={disconnecting === s.ssuObjectId}
+                        disabled={!canUseStorageApi || disconnecting === s.ssuObjectId}
                         onClick={() => void handleDisconnect(s.ssuObjectId)}
                       >
                         {disconnecting === s.ssuObjectId ? "Disconnecting…" : "Disconnect"}
@@ -386,7 +475,19 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
               </ul>
             )}
 
-            <button type="button" className={primaryCls} onClick={() => void openAddView()}>
+            <button
+              type="button"
+              className={primaryCls}
+              disabled={!canUseStorageApi}
+              title={
+                !canUseStorageApi
+                  ? !walletConnected
+                    ? "Connect your wallet first."
+                    : "Wait until your tribe is resolved."
+                  : undefined
+              }
+              onClick={() => void openAddView()}
+            >
               + Add storage
             </button>
           </div>
@@ -395,7 +496,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
         {/* ------------------------------------------------------------------ */}
         {/* ADD view                                                            */}
         {/* ------------------------------------------------------------------ */}
-        {view === "add" && (
+        {walletConnected && view === "add" && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted m-0">
               Select one of your storage units below, or enter an SSU object ID manually.
@@ -482,7 +583,8 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
                 type="button"
                 className={primaryCls}
                 onClick={() => void handleConnect()}
-                disabled={!selectedSsu && !manualSsuId.trim()}
+                disabled={(!selectedSsu && !manualSsuId.trim()) || !canUseStorageApi}
+                title={!canUseStorageApi ? "Wallet and resolved tribe are required." : undefined}
               >
                 Connect storage
               </button>
@@ -503,7 +605,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
         {/* ------------------------------------------------------------------ */}
         {/* BUSY view                                                           */}
         {/* ------------------------------------------------------------------ */}
-        {view === "busy" && (
+        {walletConnected && view === "busy" && (
           <div className="flex flex-col items-center gap-3 py-4">
             <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
             <p className="text-sm text-muted m-0">{busyMsg || "Working…"}</p>
@@ -513,7 +615,7 @@ export function ConnectStorageModal({ onClose }: ConnectStorageModalProps) {
         {/* ------------------------------------------------------------------ */}
         {/* HISTORY view                                                        */}
         {/* ------------------------------------------------------------------ */}
-        {view === "history" && (
+        {walletConnected && view === "history" && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <button

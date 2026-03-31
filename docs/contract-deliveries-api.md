@@ -39,4 +39,9 @@ The sign-tx page uses `character::borrow_owner_cap<Character>` when the pending 
 
 Move entry: `packages/move/powerlay-storage/sources/powerlay_storage.move` — `deliver_personal_to_owner_primary`.
 
-After republishing the Move package, update `POWERLAY_STORAGE_PACKAGE_ID` in `packages/electron-shell/src/storage/storageConfig.ts` and the matching constant in `packages/ui-desktop/src/services/storage/storageTransactionBuilder.ts`.
+After republishing the Move package, record the new publish in `packages/move/powerlay-storage/Published.toml`, then update `POWERLAY_STORAGE_PACKAGE_ID` in `packages/electron-shell/src/storage/storageConfig.ts` and the matching constant in `packages/ui-desktop/src/services/storage/storageTransactionBuilder.ts`.
+
+For Frontier world separation:
+- Keep the existing `testnet_utopia` publish metadata intact.
+- Publish a separate `testnet_stillness` package against the Stillness world package.
+- Do not overwrite the Utopia package id with the Stillness one; desktop config should switch between them by environment.

@@ -12,10 +12,14 @@ export interface BackendTokenBalance {
   user_id?: string;
   currency_code?: string;
   balance?: string | number;
+  amount?: string | number;
+  balance_after?: string | number;
   reserved?: string | number;
   reserved_balance?: string | number;
   available?: string | number;
   available_balance?: string | number;
+  reference_note?: string | null;
+  created_at?: string;
 }
 
 export interface BackendContractStats {
@@ -47,6 +51,12 @@ export interface BackendContractItem {
   paid_reward_amount: string | number;
   assignee_text?: string | null;
   sort_order: number;
+  remaining_required?: string | number | null;
+  available_in_my_personal_slot?: string | number | null;
+  max_deposit_allowed?: string | number | null;
+  pending_deposit_qty?: string | number | null;
+  deposit_row_status?: string | null;
+  deposit_status_message?: string | null;
 }
 
 export interface BackendContractListRow {

@@ -11,7 +11,13 @@ import type {
   SearchContractsParams,
   UpdateDraftInput,
 } from "@powerlay/core";
-import type { ContractLogEntry, RecordDeliveryBody, SignDeliveryTxParams } from "../../preload";
+import type {
+  ContractLogEntry,
+  RecordDeliveryBody,
+  SignDeliveryTxParams,
+  SubmitDepositAttemptBody,
+  SubmitDepositAttemptResult,
+} from "../../preload";
 
 export interface TokenBalanceView {
   balance: number;
@@ -50,6 +56,8 @@ export interface ContractsClient {
   signDeliveryTx(params: SignDeliveryTxParams): Promise<{ digest: string } | { error: string }>;
   /** POST delivery after chain tx — server verifies digest and updates balances / line progress. */
   recordDelivery(contractId: string, body: RecordDeliveryBody): Promise<LogisticsContract>;
+  /** POST async deposit-attempt after tx digest is available. */
+  submitDepositAttempt(contractId: string, body: SubmitDepositAttemptBody): Promise<SubmitDepositAttemptResult>;
 }
 
 export function getContractsClient(): ContractsClient | null {

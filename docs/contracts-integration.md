@@ -8,7 +8,7 @@ The desktop **Contracts** tab talks to a **contracts service** through **Electro
 
 | Variable | Effect |
 |----------|--------|
-| `POWERLAY_API_BASE` | Root URL for the **Powerlay HTTP API** (contracts, storage, shared routes). Must include the version prefix your server uses (e.g. `…/api/v1`, no trailing slash). Example resolved paths: `POST {base}/contracts`, `GET {base}/storages`, `DELETE {base}/storages/{ssu_id}`. Storage routes require header **`X-Tribe-Id`**. Register body uses **`ssu_id`**, **`tx_hash`**, optional **`display_name`** (see `storageHttpBackend.ts`). (Replaces the former `POWERLAY_CONTRACTS_API_BASE` name.) |
+| `POWERLAY_API_BASE` | Root URL for the **Powerlay HTTP API** (contracts, storage, shared routes). Must include the version prefix your server uses (e.g. `…/api/v1`, no trailing slash). Example resolved paths: `POST {base}/contracts`, `GET {base}/storages`, `DELETE {base}/storages/{ssu_id}`. Storage routes require **`X-Tribe-Id`** plus the same identity headers as contracts; **`GET /storages`** is **user-scoped** (only the authenticated user’s registrations). Register body: **`ssu_id`**, **`tx_hash`**, optional **`display_name`**, optional **`character_id`** from session (see `storageHttpBackend.ts`). (Replaces the former `POWERLAY_CONTRACTS_API_BASE` name.) |
 
 Set env vars before starting Electron (shell, IDE launch config, or OS environment).
 
@@ -26,18 +26,21 @@ Routes such as `/api/v1/admin/...` or `/api/v1/internal/...` are **not** called 
 
 | Backend (wire) | Desktop `ConnectedStorage` / POST body |
 |----------------|----------------------------------------|
-| **Request** `ssu_id` | Sent as `ssu_id` (not `ssu_object_id`) |
-| **Request** `display_name` | Sent when user enters a label (not `name`) |
-| **Request** `tx_hash` | Sent after on-chain connect; backend model should include this field (or use `extra` policy that allows it) |
+| **Request** `ssu_id` | Sent as `ssu_id` (backend also accepts `ssu_object_id`) |
+| **Request** `display_name` | Sent when user enters a label (backend also accepts `name`) |
+| **Request** `tx_hash` | Sent after on-chain connect |
+| **Request** `character_id` | Sent when session has `characterId` (audit / on-chain correlation; list remains user-scoped, not filtered by character) |
 | **Response** `id` | `id` |
 | **Response** `ssu_id` | `ssuObjectId` |
 | **Response** `tribe_id` | `tribeId` |
-| **Response** `owner_user_id` | `ownerUserId` (optional) |
-| **Response** `owner_wallet` | `ownerWallet` (optional) |
+| **Response** `owner_user_id` | `ownerUserId` |
+| **Response** `owner_wallet` | `ownerWallet` |
+| **Response** `character_id` | `characterId` |
+| **Response** `tx_hash` | `txHash` |
 | **Response** `display_name` | `name` |
 | **Response** `is_active` | `isActive` (optional) |
-| **Response** `tx_hash` (if added later) | `txHash` |
-| **Response** `connected_at` (if added later) | `connectedAt`; else client uses parse-time `Date.now()` |
+| **Response** `connected_at` (if present) | `connectedAt`; else client may use parse-time `Date.now()` |
+| **Conflicts** | `409` e.g. `STORAGE_ALREADY_CONNECTED_TO_ANOTHER_TRIBE` / `STORAGE_ALREADY_CONNECTED_TO_ANOTHER_USER` |
 
 ## Auth and context (conceptual)
 

@@ -162,6 +162,9 @@ function getSignTxPageHtml(): string {
       if (errorEl) errorEl.textContent = msg;
       if (statusEl) statusEl.textContent = '';
     }
+    function normalizeAddress(v) {
+      return typeof v === 'string' ? v.trim().toLowerCase() : '';
+    }
 
     async function loadParams() {
       const ctrl = new AbortController();
@@ -226,6 +229,18 @@ function getSignTxPageHtml(): string {
         if (!connectFeature) throw new Error('Wallet does not support connect');
         const { accounts } = await connectFeature.connect();
         if (!accounts || accounts.length === 0) throw new Error('No accounts returned from wallet');
+        const expectedWallet = normalizeAddress(txParams.walletAddress);
+        const chosenAccount =
+          expectedWallet
+            ? accounts.find((account) => normalizeAddress(account.address) === expectedWallet)
+            : accounts[0];
+        if (!chosenAccount) {
+          throw new Error(
+            'Connected wallet account does not match the app session. In Powerlay you are signed in as ' +
+            txParams.walletAddress +
+            ', but Eve Vault selected a different account.'
+          );
+        }
 
         setStatus('<span class="spinner"></span>Building transaction…');
 
@@ -325,7 +340,7 @@ function getSignTxPageHtml(): string {
         if (!signFeature?.signAndExecuteTransaction) throw new Error('Wallet does not support sui:signAndExecuteTransaction');
 
         slog('sign_submit', { chain });
-        const result = await signFeature.signAndExecuteTransaction({ transaction: tx, chain, account: accounts[0] });
+        const result = await signFeature.signAndExecuteTransaction({ transaction: tx, chain, account: chosenAccount });
         const digest = result?.digest ?? result?.effects?.transactionDigest;
         if (!digest) throw new Error('No transaction digest returned by wallet');
 

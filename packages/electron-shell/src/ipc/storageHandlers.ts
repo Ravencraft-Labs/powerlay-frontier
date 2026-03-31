@@ -1,12 +1,25 @@
 import { ipcMain, shell } from "electron";
 import { randomUUID } from "crypto";
 import { loadSession } from "../auth/sessionStore.js";
-import { discoverWalletSsus, fetchSsuOwnerCapId } from "../storage/suiStorageDiscovery.js";
+import {
+  discoverWalletSsus,
+  fetchObjectOwnerAddress,
+  fetchSsuOwnerCapId,
+} from "../storage/suiStorageDiscovery.js";
 import { getStorageHttpBackend } from "../storage/storageHttpBackend.js";
 import type { AuthServerResult } from "../auth/authServer.js";
-import { POWERLAY_STORAGE_PACKAGE_ID } from "../storage/storageConfig.js";
+import { getPowerlayStoragePackageId } from "../storage/storageConfig.js";
+import { getContractsDevUserId } from "../contracts/contractsApiConfig.js";
+import { FRONTIER_WORLD_PACKAGE_STILLNESS } from "../blockchain/playerTribeFromChain.js";
+import { loadSettings } from "./settingsStore.js";
 
 const SIGN_TX_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Storage flows require a linked wallet, except local HTTP testing with POWERLAY_CONTRACTS_DEV_USER_ID. */
+function storageWalletOrDevBypass(): boolean {
+  if (getContractsDevUserId()) return true;
+  return Boolean(loadSession()?.walletAddress?.trim());
+}
 
 export function registerStorageHandlers(authServer: AuthServerResult): void {
   /**
@@ -15,6 +28,7 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
    * Returns: ConnectedStorage[]
    */
   ipcMain.handle("storage:list-connected", async () => {
+    if (!storageWalletOrDevBypass()) return [];
     try {
       return await getStorageHttpBackend().listConnectedStorages();
     } catch (err) {
@@ -49,6 +63,9 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
   ipcMain.handle(
     "storage:register",
     async (_e, ssuObjectId: string, txHash: string, name?: string) => {
+      if (!storageWalletOrDevBypass()) {
+        throw new Error("Connect your wallet in the app before registering storage.");
+      }
       return await getStorageHttpBackend().registerStorage(ssuObjectId, txHash, name);
     }
   );
@@ -60,6 +77,7 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
    * Returns: StorageHistoryEntry[]
    */
   ipcMain.handle("storage:get-history", async (_e, ssuId: string) => {
+    if (!storageWalletOrDevBypass()) return [];
     try {
       return await getStorageHttpBackend().getStorageHistory(ssuId);
     } catch (err) {
@@ -73,6 +91,9 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
    * Channel: storage:disconnect
    */
   ipcMain.handle("storage:disconnect", async (_e, ssuObjectId: string) => {
+    if (!storageWalletOrDevBypass()) {
+      throw new Error("Connect your wallet in the app before disconnecting storage.");
+    }
     try {
       await getStorageHttpBackend().disconnectStorage(ssuObjectId);
     } catch (err) {
@@ -96,9 +117,13 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
       characterId?: string;
       worldPackageId?: string;
     }): Promise<{ digest: string } | { error: string }> => {
-      // Resolve characterId from session if not provided by UI.
+      if (!storageWalletOrDevBypass()) {
+        return { error: "Connect your wallet in the app before connecting storage on-chain." };
+      }
       const session = loadSession();
-      const resolvedCharacterId = params.characterId?.trim() || session?.characterId?.trim() || undefined;
+      let resolvedCharacterId = params.characterId?.trim() || undefined;
+      const settingsWorldPkg = loadSettings().worldContractsPackageId?.trim();
+      const powerlayPackageId = getPowerlayStoragePackageId();
 
       // Resolve ownerCapId from SSU object if not provided (common for manual SSU input
       // where discovery hasn't run, or for Character-owned OwnerCaps that aren't in wallet objects).
@@ -111,6 +136,23 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
 
       if (!resolvedOwnerCapId) {
         return { error: "Could not resolve OwnerCap ID for this SSU. Make sure you own this storage unit." };
+      }
+
+      const walletAddress = session?.walletAddress?.trim() || "";
+      const sessionCharacterId = session?.characterId?.trim() || "";
+      const ownerAddress = await fetchObjectOwnerAddress(resolvedOwnerCapId);
+      const ownerNorm = ownerAddress?.toLowerCase() || "";
+      const walletNorm = walletAddress.toLowerCase();
+      const characterNorm = sessionCharacterId.toLowerCase();
+
+      if (!resolvedCharacterId && ownerNorm && characterNorm && ownerNorm === characterNorm) {
+        resolvedCharacterId = sessionCharacterId;
+      } else if (ownerNorm && walletNorm && ownerNorm !== walletNorm && (!characterNorm || ownerNorm !== characterNorm)) {
+        return {
+          error:
+            `This storage OwnerCap is owned by ${ownerAddress}, not by the active wallet or stored Character object. ` +
+            "Reconnect the correct wallet in Powerlay, or refresh your character/session before connecting storage.",
+        };
       }
 
       const sessionId = randomUUID();
@@ -129,9 +171,10 @@ export function registerStorageHandlers(authServer: AuthServerResult): void {
             storageUnitId: params.storageUnitId,
             ownerCapId: resolvedOwnerCapId!,
             tribeId: params.tribeId,
+            walletAddress: walletAddress || undefined,
             characterId: resolvedCharacterId,
-            worldPackageId: params.worldPackageId,
-            powerlayPackageId: POWERLAY_STORAGE_PACKAGE_ID,
+            worldPackageId: params.worldPackageId?.trim() || settingsWorldPkg || FRONTIER_WORLD_PACKAGE_STILLNESS,
+            powerlayPackageId,
           },
           (digest) => {
             clearTimeout(timeout);

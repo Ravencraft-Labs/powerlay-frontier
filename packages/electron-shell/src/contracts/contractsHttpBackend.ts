@@ -22,7 +22,7 @@ import type {
   BackendContractStats,
   BackendTokenBalance,
 } from "./backendDto.js";
-import { getPowerlayApiBaseUrl } from "./contractsApiConfig.js";
+import { getContractsApiBaseUrl } from "./contractsApiConfig.js";
 import {
   failureFromHttp,
   listRowCreatorMatch,
@@ -67,14 +67,14 @@ function humanizeReachabilityError(err: unknown): string {
     return "Cannot connect to the Powerlay backend (connection refused). Start the API server.";
   }
   if (code === "ENOTFOUND") {
-    return "Cannot resolve the Powerlay backend host. Check POWERLAY_API_BASE.";
+    return "Cannot resolve the Powerlay backend host. Check POWERLAY_CONTRACTS_API_BASE.";
   }
   if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
     return "Connection to the Powerlay backend timed out. Check the server address and firewall.";
   }
   const msg = err instanceof Error ? err.message : String(err);
   if (/fetch failed/i.test(msg)) {
-    return "Cannot reach the Powerlay backend. Ensure the server is running and POWERLAY_API_BASE is correct.";
+    return "Cannot reach the Powerlay backend. Ensure the server is running and POWERLAY_CONTRACTS_API_BASE is correct.";
   }
   return msg || "Cannot reach the Powerlay backend.";
 }
@@ -83,6 +83,7 @@ export interface AuthHeadersContext {
   userId: string;
   walletAddress: string | null;
   tribeId: string | null;
+  characterId: string | null;
   nickname: string | null;
 }
 
@@ -93,12 +94,14 @@ function resolveAuthContext(): AuthHeadersContext | null {
   const userId = devId ?? (wallet ? deterministicUserIdFromWallet(wallet) : null);
   if (!userId) return null;
   const tribeId = session?.tribeId?.trim() || null;
+  const characterId = session?.characterId?.trim() || null;
   // Prefer dev override, then on-chain character name resolved at login time
   const nickname = getContractsDevNickname() ?? session?.characterName?.trim() ?? null;
   return {
     userId,
     walletAddress: wallet,
     tribeId: (tribeId && tribeId.trim()) || null,
+    characterId: (characterId && characterId.trim()) || null,
     nickname: nickname || null,
   };
 }
@@ -131,6 +134,14 @@ export interface ContractLogEntry {
   toStatus?: string;
   /** Raw extra fields from the backend for forward compatibility. */
   raw?: unknown;
+}
+
+export interface SubmitDepositAttemptResult {
+  attemptId?: string;
+  status?: string;
+  allowedQty?: number;
+  requestedQty?: number;
+  contract?: LogisticsContract;
 }
 
 function mapContractLogItem(item: BackendContractLogItem, idx: number): ContractLogEntry {
@@ -177,7 +188,7 @@ export class ContractsHttpBackend {
   private readonly base: string;
 
   constructor(baseUrl?: string) {
-    this.base = (baseUrl ?? getPowerlayApiBaseUrl()).replace(/\/+$/, "");
+    this.base = (baseUrl ?? getContractsApiBaseUrl()).replace(/\/+$/, "");
   }
 
   private authHeaders(ctx: AuthHeadersContext, nicknameOverride?: string): HeadersInit {
@@ -187,6 +198,7 @@ export class ContractsHttpBackend {
     };
     if (ctx.walletAddress) h["X-Wallet-Address"] = ctx.walletAddress;
     if (ctx.tribeId) h["X-Tribe-Id"] = ctx.tribeId;
+    if (ctx.characterId) h["X-Character-Id"] = ctx.characterId;
     const nick = nicknameOverride?.trim() || ctx.nickname;
     if (nick) h["X-Nickname"] = nick;
     return h;
@@ -222,6 +234,7 @@ export class ContractsHttpBackend {
     h.set("X-User-Id", ctx.userId);
     if (ctx.walletAddress) h.set("X-Wallet-Address", ctx.walletAddress);
     if (ctx.tribeId) h.set("X-Tribe-Id", ctx.tribeId);
+    if (ctx.characterId) h.set("X-Character-Id", ctx.characterId);
     if (ctx.nickname) h.set("X-Nickname", ctx.nickname);
     return fetch(url, { method, headers: h });
   }
@@ -555,6 +568,14 @@ export class ContractsHttpBackend {
     const mergedBody = mapCreateDraftToBackendWithExistingLineIds(full, current.lines);
     const res = await this.request("PUT", `/contracts/${encodeURIComponent(id)}`, { body: mergedBody });
     const json = await readJson(res);
+    if (!res.ok) {
+      console.error("[contracts] update-draft failed", {
+        contractId: id,
+        httpStatus: res.status,
+        requestBody: mergedBody,
+        responseBody: json,
+      });
+    }
     if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
     const updated = mapContractDetailToLogistics(json as BackendContractDetail);
     rememberContractDraft(auth.userId, id);
@@ -684,6 +705,53 @@ export class ContractsHttpBackend {
     return contract;
   }
 
+  /**
+   * Submit an async deposit-attempt after on-chain tx signing succeeds.
+   * `POST /contracts/{id}/deposit-attempt`
+   */
+  async submitDepositAttempt(
+    contractId: string,
+    body: {
+      txDigest: string;
+      typeId: number;
+      requestedQty: number;
+    }
+  ): Promise<SubmitDepositAttemptResult> {
+    this.requireAuth();
+    const res = await this.request("POST", `/contracts/${encodeURIComponent(contractId)}/deposit-attempt`, {
+      body: {
+        tx_digest: body.txDigest.trim(),
+        type_id: Math.floor(body.typeId),
+        requested_qty: Math.floor(body.requestedQty),
+      },
+    });
+    const json = await readJson(res);
+    if (!res.ok) throw new Error(JSON.stringify(parseErrorBody(json)));
+
+    const out: SubmitDepositAttemptResult = {};
+    if (json && typeof json === "object") {
+      const obj = json as Record<string, unknown>;
+      if (typeof obj.attempt_id === "string" && obj.attempt_id.trim()) out.attemptId = obj.attempt_id.trim();
+      if (typeof obj.status === "string" && obj.status.trim()) out.status = obj.status.trim().toLowerCase();
+      if (obj.allowed_qty != null) {
+        const n = Number(obj.allowed_qty);
+        if (Number.isFinite(n)) out.allowedQty = n;
+      }
+      if (obj.requested_qty != null) {
+        const n = Number(obj.requested_qty);
+        if (Number.isFinite(n)) out.requestedQty = n;
+      }
+      if (obj.contract && typeof obj.contract === "object") {
+        out.contract = mapContractDetailToLogistics(obj.contract as BackendContractDetail);
+        await enrichParticipantNames(out.contract.participants);
+      } else if (obj.id && obj.items && obj.participants) {
+        out.contract = mapContractDetailToLogistics(obj as unknown as BackendContractDetail);
+        await enrichParticipantNames(out.contract.participants);
+      }
+    }
+    return out;
+  }
+
   async getLogs(contractId: string, limit = 50): Promise<ContractLogEntry[]> {
     this.requireAuth();
     const q = new URLSearchParams({ limit: String(limit), offset: "0" });
@@ -731,4 +799,8 @@ let singleton: ContractsHttpBackend | null = null;
 export function getContractsHttpBackend(): ContractsHttpBackend {
   if (!singleton) singleton = new ContractsHttpBackend();
   return singleton;
+}
+
+export function resetContractsHttpBackend(): void {
+  singleton = null;
 }

@@ -130,7 +130,13 @@ export function ContractsSection() {
           <button type="button" className={btnCls} onClick={openStats}>
             Statistics
           </button>
-          <button type="button" className={btnCls} onClick={() => setConnectStorageOpen(true)}>
+          <button
+            type="button"
+            className={btnCls}
+            disabled={!session?.walletAddress}
+            title={!session?.walletAddress ? "Connect your wallet in the header to use storage." : undefined}
+            onClick={() => setConnectStorageOpen(true)}
+          >
             Connect storage
           </button>
           <OverlayWithLock frame="contracts" btnCls={btnCls} />

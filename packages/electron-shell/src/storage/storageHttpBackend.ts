@@ -8,16 +8,17 @@
  *
  * **POST /storages** body (desktop sends):
  *   - `ssu_id` (required)
- *   - `tx_hash` (required) — Sui digest after `connect_storage` (add to Pydantic schema if missing)
+ *   - `tx_hash` (required) — Sui digest after `connect_storage`
  *   - `display_name` (optional)
+ *   - `character_id` (optional) — on-chain Character object id; sent when present in session (audit / on-chain correlation)
  *
- * **Response row:** `id`, `ssu_id`, `tribe_id`, `owner_user_id`, `owner_wallet`, `display_name`,
- * `is_active` (and optionally `tx_hash` / timestamps if the API adds them later).
+ * **Response row:** `id`, `ssu_id`, `tribe_id`, `owner_user_id`, `owner_wallet`, `character_id`,
+ * `tx_hash`, `display_name`, `is_active` (and optionally timestamps).
  *
  * Endpoints (relative to `POWERLAY_API_BASE`, e.g. `…/api/v1`):
- *   GET    /storages              — requires `X-Tribe-Id`
+ *   GET    /storages              — user-scoped list (authenticated user only); requires `X-Tribe-Id`
  *   POST   /storages
- *   DELETE /storages/{ssu_id}     — requires `X-Tribe-Id`
+ *   DELETE /storages/{ssu_id}     — owner must match authenticated user; requires `X-Tribe-Id`
  *
  * Uses the Powerlay API base (`getPowerlayApiBaseUrl()` → optional `POWERLAY_API_BASE`,
  * otherwise the app default). Storages are served
@@ -25,7 +26,7 @@
  */
 
 import { loadSession } from "../auth/sessionStore.js";
-import { getContractsDevUserId, getPowerlayApiBaseUrl } from "../contracts/contractsApiConfig.js";
+import { getContractsDevUserId, getStorageApiBaseUrl } from "../contracts/contractsApiConfig.js";
 import { deterministicUserIdFromWallet } from "../contracts/walletUserId.js";
 import type { BackendStorageHistoryItem } from "../contracts/backendDto.js";
 
@@ -34,10 +35,10 @@ import type { BackendStorageHistoryItem } from "../contracts/backendDto.js";
 // ---------------------------------------------------------------------------
 
 function resolvePowerlayApiBase(): string {
-  const base = getPowerlayApiBaseUrl().trim();
+  const base = getStorageApiBaseUrl().trim();
   if (!base) {
     throw new Error(
-      "Powerlay backend is not available: API base URL is empty. Set POWERLAY_API_BASE."
+      "Powerlay backend is not available: API base URL is empty. Set POWERLAY_STORAGE_API_BASE."
     );
   }
   return base.replace(/\/+$/, "");
@@ -147,6 +148,8 @@ export interface ConnectedStorage {
   ownerWallet?: string | null;
   /** Maps API `is_active` when present. */
   isActive?: boolean;
+  /** Maps API `character_id` when present (on-chain Character object id). */
+  characterId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +186,7 @@ export class StorageHttpBackend {
       const msg = err instanceof Error ? err.message : String(err);
       if (/fetch failed/i.test(msg) || msg === "Failed to fetch") {
         throw new Error(
-          "Powerlay backend is not available. Ensure the API is reachable and POWERLAY_API_BASE is correct.",
+          "Powerlay backend is not available. Ensure the API is reachable and POWERLAY_STORAGE_API_BASE is correct.",
           { cause: err }
         );
       }
@@ -192,7 +195,7 @@ export class StorageHttpBackend {
   }
 
   /**
-   * List all StorageUnits connected by the current user (and/or their tribe).
+   * List StorageUnits registered by the current authenticated user.
    * GET /storages
    */
   async listConnectedStorages(): Promise<ConnectedStorage[]> {
@@ -221,11 +224,14 @@ export class StorageHttpBackend {
     txHash: string,
     name?: string
   ): Promise<ConnectedStorage> {
+    const session = loadSession();
+    const characterId = session?.characterId?.trim();
     const body: Record<string, string> = {
       ssu_id: ssuObjectId,
       tx_hash: txHash.trim(),
     };
     if (name?.trim()) body.display_name = name.trim();
+    if (characterId) body.character_id = characterId;
     const res = await this.request("POST", "/storages", body);
     if (!res.ok) {
       const json = await readJson(res);
@@ -287,6 +293,10 @@ export function getStorageHttpBackend(): StorageHttpBackend {
   return _instance;
 }
 
+export function resetStorageHttpBackend(): void {
+  _instance = null;
+}
+
 // ---------------------------------------------------------------------------
 // Response parsers (loose — handle backend shape variations)
 // ---------------------------------------------------------------------------
@@ -328,6 +338,14 @@ function parseStorageRow(raw: unknown): ConnectedStorage {
           ? String(ownerWallet)
           : undefined,
     isActive: typeof isActive === "boolean" ? isActive : undefined,
+    characterId:
+      typeof o.character_id === "string"
+        ? o.character_id
+        : o.character_id != null
+          ? String(o.character_id)
+          : typeof o.characterId === "string"
+            ? o.characterId
+            : undefined,
   };
 }
 

@@ -126,11 +126,19 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
     setSaving(true);
     setPublishError(null);
     try {
-      if (!editingId && !targetSsuId.trim()) {
+      if (!targetStarSystem.trim()) {
+        setPublishError("Target system is required.");
+        return;
+      }
+      if (!targetSsuId.trim()) {
         setPublishError("Target storage ID is required.");
         return;
       }
       const payloadLines = normalizedLines();
+      if (payloadLines.length === 0) {
+        setPublishError("Add at least one valid resource line before saving the draft.");
+        return;
+      }
       if (editingId) {
         await client.updateDraft(editingId, {
           title: title.trim(),
@@ -173,6 +181,10 @@ export function CreateContractForm({ client, gameData, onPublished, onDraftsChan
       const payloadLines = normalizedLines();
       if (payloadLines.length === 0) {
         setPublishError("Add at least one valid resource line (search a resource, set required amount and tokens).");
+        return;
+      }
+      if (!targetStarSystem.trim()) {
+        setPublishError("Target system is required.");
         return;
       }
       if (!targetSsuId.trim()) {

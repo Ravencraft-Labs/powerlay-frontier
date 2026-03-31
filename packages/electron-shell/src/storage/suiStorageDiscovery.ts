@@ -24,6 +24,11 @@ export interface WalletSsu {
   name?: string;
 }
 
+function getSuiRpcUrl(): string {
+  const u = process.env.POWERLAY_SUI_RPC_URL?.trim();
+  return u || "https://rpc.testnet.sui.io";
+}
+
 // ---------------------------------------------------------------------------
 // GraphQL queries
 // ---------------------------------------------------------------------------
@@ -196,6 +201,50 @@ export async function fetchSsuOwnerCapId(ssuObjectId: string): Promise<string | 
     const raw = contents["owner_cap_id"];
     if (typeof raw === "string" && raw.trim()) return raw.trim();
     return undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Read the owner of an object through Sui JSON-RPC.
+ * Returns the owning address when the object is address-owned, or the parent object id
+ * when the object is object-owned. Undefined on any error.
+ */
+export async function fetchObjectOwnerAddress(objectId: string): Promise<string | undefined> {
+  const rpcUrl = getSuiRpcUrl();
+  const id = objectId?.trim();
+  if (!rpcUrl || !id) return undefined;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "sui_getObject",
+        params: [id, { showOwner: true }],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as {
+      result?: {
+        data?: {
+          owner?: {
+            AddressOwner?: string;
+            ObjectOwner?: string;
+          };
+        };
+      };
+    };
+    const owner = json.result?.data?.owner;
+    return owner?.AddressOwner?.trim() || owner?.ObjectOwner?.trim() || undefined;
   } catch {
     return undefined;
   } finally {
