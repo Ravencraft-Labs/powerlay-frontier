@@ -2,6 +2,11 @@ import { app } from "electron";
 import fs from "fs";
 import path from "path";
 
+const DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS =
+  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const DEFAULT_CONTRACTS_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
+const DEFAULT_STORAGE_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
+
 const SETTINGS_FILE = "settings.json";
 
 function getSettingsPath(): string {
@@ -18,6 +23,12 @@ function getSettingsPath(): string {
 export interface AppSettings {
   gameLogDir?: string;
   skipLogPrompt?: boolean;
+  /** World-contracts package id used for wallet sign flows (connect storage, contract delivery). */
+  worldContractsPackageId?: string;
+  /** Contracts backend base URL including `/api/v1`. */
+  contractsApiBase?: string;
+  /** Storage backend base URL including `/api/v1`. */
+  storageApiBase?: string;
 }
 
 const DEFAULT_GAME_LOG_DIR =
@@ -27,6 +38,9 @@ const DEFAULT_GAME_LOG_DIR =
 
 const defaults: AppSettings = {
   gameLogDir: DEFAULT_GAME_LOG_DIR,
+  worldContractsPackageId: DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS,
+  contractsApiBase: DEFAULT_CONTRACTS_API_BASE_STILLNESS,
+  storageApiBase: DEFAULT_STORAGE_API_BASE_STILLNESS,
 };
 
 export function loadSettings(): AppSettings {

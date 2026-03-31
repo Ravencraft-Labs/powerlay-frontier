@@ -22,10 +22,14 @@ export interface ContractCardRowProps {
   onFinish?: () => void;
   onCancel?: () => void;
   onStatistics?: () => void;
+  onViewLogs?: () => void;
   actionBusy?: boolean;
   /** UI-only: auto-refresh state for polling. */
   autoRefresh?: boolean;
   onAutoRefreshToggle?: (next: boolean) => void;
+  deliveryTxContext?: { ssuObjectId: string; connectTxDigest?: string } | null;
+  onRefreshContractDetail?: () => Promise<void>;
+  onRefreshBalance?: () => void;
 }
 
 export function ContractCardRow({
@@ -45,9 +49,13 @@ export function ContractCardRow({
   onFinish,
   onCancel,
   onStatistics,
+  onViewLogs,
   actionBusy,
   autoRefresh,
   onAutoRefreshToggle,
+  deliveryTxContext,
+  onRefreshContractDetail,
+  onRefreshBalance,
 }: ContractCardRowProps) {
   const c = summary.contract;
   const isParticipant = userWallet != null && c.participants.some((p) => walletMatches(p.walletAddress, userWallet));
@@ -128,9 +136,13 @@ export function ContractCardRow({
               onFinish={isMy ? onFinish : undefined}
               onCancel={isMy ? onCancel : undefined}
               onStatistics={isMy ? onStatistics : undefined}
+              onViewLogs={isMy ? onViewLogs : undefined}
               actionBusy={isMy ? actionBusy : undefined}
               autoRefresh={autoRefresh}
               onAutoRefreshToggle={onAutoRefreshToggle}
+              deliveryTxContext={deliveryTxContext}
+              onRefreshContractDetail={onRefreshContractDetail}
+              onRefreshBalance={onRefreshBalance}
             />
           </div>
         ))}

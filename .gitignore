@@ -34,3 +34,5 @@ release/
 
 # Root shell scripts
 /*.sh
+
+CLAUDE.md

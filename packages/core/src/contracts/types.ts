@@ -5,6 +5,7 @@ export type ContractVisibility = "tribe" | "public" | "alliance";
 export type ContractLifecycleStatus = "draft" | "published" | "in_progress" | "completed" | "canceled";
 
 export type ContractPriority = "low" | "medium" | "high";
+export type ContractDepositRowStatus = "ready" | "waiting" | "confirmed" | "failed";
 
 export interface ContractResourceLine {
   id: string;
@@ -19,6 +20,18 @@ export interface ContractResourceLine {
   sortOrder?: number;
   /** Tokens already paid on this line (detail / API). */
   paidRewardAmount?: number;
+  /** Remaining quantity required for this contract line (backend-computed). */
+  remainingRequired?: number;
+  /** Quantity available in the caller's personal SSU slot for this resource (backend-computed). */
+  availableInMyPersonalSlot?: number;
+  /** Maximum quantity allowed to deposit now (backend-computed, authoritative). */
+  maxDepositAllowed?: number;
+  /** Quantity currently pending chain confirmation for this line/resource (backend-computed). */
+  pendingDepositQty?: number;
+  /** Optional backend status for the deposit row. */
+  depositRowStatus?: ContractDepositRowStatus | string;
+  /** Optional backend-provided message for pending/failed states. */
+  depositStatusMessage?: string;
 }
 
 export interface ContractParticipant {

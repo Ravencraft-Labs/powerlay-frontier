@@ -1,0 +1,21 @@
+[package]
+name = "powerlay_storage"
+edition = "2024.beta"
+
+[dependencies]
+# world-contracts for EVE Frontier (custom environments on shared Sui testnet, rev = main).
+# - subdir is "contracts/world" (not "packages/world").
+# - Dependency name must be "world" to match the package name inside the repo.
+# - Do NOT add explicit Sui / MoveStdlib deps — world pulls them in implicitly.
+# - After first successful build, commit the generated Move.lock.
+world = { git = "https://github.com/evefrontier/world-contracts", subdir = "contracts/world", rev = "main" }
+
+# New-style package (Sui 1.63+): do NOT add [addresses] here — that forces old-style and breaks
+# depending on new-style packages like world-contracts. World’s on-chain address comes from the
+# dependency’s lock / publication metadata for this chain. 4c78adac = Sui testnet chain-id prefix.
+[environments]
+# Custom names — cannot use `testnet` here (reserved system environment).
+# Both Frontier worlds currently live on the same Sui testnet chain-id, but resolve
+# different world package addresses through the selected custom environment.
+testnet_utopia = "4c78adac"
+testnet_stillness = "4c78adac"

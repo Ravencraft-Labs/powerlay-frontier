@@ -24,7 +24,13 @@ export async function resolvePlayerTribe(): Promise<TribeResolveResult> {
   const chainResult = await queryPlayerTribeFromChain(wallet);
   if (chainResult) {
     const tribe = { tribeId: chainResult.tribeId, tribeName: chainResult.tribeName };
-    saveSession({ ...session!, ...tribe, tribeResolvedAt: Date.now() });
+    saveSession({
+      ...session!,
+      ...tribe,
+      characterId: chainResult.characterId,
+      characterName: chainResult.characterName,
+      tribeResolvedAt: Date.now(),
+    });
     return { ok: true, tribeId: tribe.tribeId, tribeName: tribe.tribeName };
   }
 

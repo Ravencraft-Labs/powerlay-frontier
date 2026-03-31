@@ -74,13 +74,23 @@ function mapItem(it: BackendContractDetail["items"][0]): ContractResourceLine {
     assigneeText: it.assignee_text?.trim() || undefined,
     sortOrder: typeof it.sort_order === "number" ? it.sort_order : undefined,
     paidRewardAmount: decNum(it.paid_reward_amount),
+    ...(it.remaining_required != null ? { remainingRequired: decNum(it.remaining_required) } : {}),
+    ...(it.available_in_my_personal_slot != null ? { availableInMyPersonalSlot: decNum(it.available_in_my_personal_slot) } : {}),
+    ...(it.max_deposit_allowed != null ? { maxDepositAllowed: decNum(it.max_deposit_allowed) } : {}),
+    ...(it.pending_deposit_qty != null ? { pendingDepositQty: decNum(it.pending_deposit_qty) } : {}),
+    ...(it.deposit_row_status?.trim() ? { depositRowStatus: it.deposit_row_status.trim().toLowerCase() } : {}),
+    ...(it.deposit_status_message?.trim() ? { depositStatusMessage: it.deposit_status_message.trim() } : {}),
   };
 }
 
 function mapParticipant(p: BackendParticipant, idx: number): ContractParticipant {
+  // Treat "string" as absent — it is the Pydantic OpenAPI default that sometimes ends up as
+  // legacy test data; real nicknames are user-set or resolved from chain.
+  const rawNick = p.nickname?.trim();
+  const nickname = rawNick && rawNick !== "string" ? rawNick : undefined;
   return {
     id: String(p.user_id ?? `p-${idx}`),
-    displayName: p.nickname?.trim() || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
+    displayName: nickname || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
     walletAddress: p.wallet_address ?? undefined,
     joinedAt: Date.parse(p.joined_at) || 0,
   };
@@ -171,12 +181,18 @@ export function mapListRowToBrowseSummary(row: BackendContractListRow): Contract
 }
 
 export function mapTokenBalance(b: BackendTokenBalance): { balance: number; reserved: number; available: number } {
-  const balance = decNum(b.balance);
-  return {
-    balance,
-    reserved: 0,
-    available: balance,
-  };
+  const balance =
+    b.balance != null
+      ? decNum(b.balance)
+      : b.balance_after != null
+        ? decNum(b.balance_after)
+        : decNum(b.amount);
+  const reserved = decNum(b.reserved ?? b.reserved_balance);
+  // Prefer explicit available field; fall back to balance − reserved
+  const available = (b.available != null || b.available_balance != null)
+    ? decNum(b.available ?? b.available_balance)
+    : Math.max(0, balance - reserved);
+  return { balance, reserved, available };
 }
 
 export function mapContractStats(s: BackendContractStats): ContractStats {
@@ -204,9 +220,27 @@ export function mapPublishFailure(code: string | undefined, message: string): Pu
 
 export function parseErrorBody(json: unknown): { code: string; message: string } {
   const b = json as BackendErrorBody;
+  const detail = b?.details;
+  const detailText = Array.isArray(detail)
+    ? detail
+        .map((item) => {
+          if (!item || typeof item !== "object") return String(item);
+          const rec = item as Record<string, unknown>;
+          const path = Array.isArray(rec.loc) ? rec.loc.map((x) => String(x)).join(".") : "";
+          const msg = typeof rec.msg === "string" ? rec.msg : "";
+          return [path, msg].filter(Boolean).join(": ");
+        })
+        .filter((s) => s.trim().length > 0)
+        .join("; ")
+    : typeof detail === "string"
+      ? detail
+      : "";
   return {
     code: typeof b?.code === "string" ? b.code : "UNKNOWN",
-    message: typeof b?.message === "string" ? b.message : "Request failed.",
+    message:
+      typeof b?.message === "string"
+        ? b.message
+        : detailText || "Request failed.",
   };
 }
 

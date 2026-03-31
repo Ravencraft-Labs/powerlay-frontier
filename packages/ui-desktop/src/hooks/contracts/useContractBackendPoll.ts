@@ -8,7 +8,7 @@ import type { ContractsClient } from "../../services/contracts/contractsClient";
  * Architecture: a separate watcher service ingests chain events → backend updates contract rows →
  * this hook only refetches the contract document. The Electron app never processes raw SSU events.
  */
-const DEFAULT_POLL_MS = 15_000;
+const DEFAULT_POLL_MS = 1_000;
 
 export function useContractBackendPoll(
   client: ContractsClient,

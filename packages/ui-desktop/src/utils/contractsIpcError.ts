@@ -65,14 +65,14 @@ export function contractsErrorForUi(e: unknown, authHint = "Sign in with your wa
     return {
       auth: false,
       message: looksLikeNetworkFailure(e.message)
-        ? "Could not reach the Contracts service. Check your network or POWERLAY_CONTRACTS_API_BASE."
+        ? "Could not reach the Contracts service. Check your network or POWERLAY_API_BASE."
         : e.message,
     };
   }
   return {
     auth: false,
     message: looksLikeNetworkFailure(e.message)
-      ? "Could not reach the Contracts service. Check your network or POWERLAY_CONTRACTS_API_BASE."
+      ? "Could not reach the Contracts service. Check your network or POWERLAY_API_BASE."
       : "The contracts request failed. If the API is running, try again; long errors are hidden in the UI.",
   };
 }

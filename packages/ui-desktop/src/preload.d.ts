@@ -17,7 +17,90 @@ import type {
   ScoutVisibility,
   ScoutActivityEvent,
 } from "@powerlay/core";
+
+export interface SignDeliveryTxParams {
+  storageUnitId: string;
+  /** When you registered this SSU in-app; otherwise the shell scans chain for `StorageConfig`. */
+  connectTxDigest?: string;
+  typeId: number;
+  quantity: number;
+  worldPackageId?: string;
+  useCharacterCapBorrow?: boolean;
+}
+
+export interface RecordDeliveryBody {
+  lineId: string;
+  quantity: number;
+  suiTxDigest: string;
+  ssuObjectId: string;
+}
+
+export interface SubmitDepositAttemptBody {
+  txDigest: string;
+  typeId: number;
+  requestedQty: number;
+}
+
+export interface SubmitDepositAttemptResult {
+  attemptId?: string;
+  status?: string;
+  allowedQty?: number;
+  requestedQty?: number;
+  contract?: LogisticsContract;
+}
 import type { ContractsBackendStatus } from "../services/contracts/contractsClient";
+
+export interface WalletSsu {
+  ownerCapId: string;
+  storageUnitId: string;
+  name?: string;
+}
+
+export interface ContractLogEntry {
+  id: string;
+  eventType: string;
+  timestamp: number;
+  actorName?: string;
+  actorWallet?: string;
+  actorCharacterId?: string;
+  description?: string;
+  resourceName?: string;
+  quantity?: number;
+  txHash?: string;
+  fromStatus?: string;
+  toStatus?: string;
+  raw?: unknown;
+}
+
+export interface StorageHistoryEntry {
+  id: string;
+  eventType: string;
+  timestamp: number;
+  senderWallet?: string;
+  characterId?: string;
+  actorName?: string;
+  resourceType?: string;
+  resourceName?: string;
+  quantity?: number;
+  txHash?: string;
+  contractId?: string;
+  contractTitle?: string;
+  raw?: unknown;
+}
+
+export interface ConnectedStorage {
+  id: string;
+  ssuObjectId: string;
+  tribeId: string;
+  txHash: string;
+  connectedAt: number;
+  name?: string;
+  ownerUserId?: string;
+  ownerWallet?: string | null;
+  isActive?: boolean;
+  /** On-chain Character object id when the API returned it (audit / correlation). */
+  characterId?: string;
+}
 
 export interface GameDataErrors {
   types?: string;
@@ -56,6 +139,18 @@ export interface EFOverlayAPI {
     cancel: (contractId: string) => Promise<LogisticsContract | null>;
     completeContract: (contractId: string) => Promise<LogisticsContract | null>;
     getBackendStatus: () => Promise<ContractsBackendStatus>;
+    getLogs: (contractId: string) => Promise<ContractLogEntry[]>;
+    signDeliveryTx: (params: SignDeliveryTxParams) => Promise<{ digest: string } | { error: string }>;
+    recordDelivery: (contractId: string, body: RecordDeliveryBody) => Promise<LogisticsContract>;
+    submitDepositAttempt: (contractId: string, body: SubmitDepositAttemptBody) => Promise<SubmitDepositAttemptResult>;
+  };
+  storage?: {
+    listConnected: () => Promise<ConnectedStorage[]>;
+    discoverWalletSsus: () => Promise<WalletSsu[]>;
+    register: (ssuObjectId: string, txHash: string, name?: string) => Promise<ConnectedStorage>;
+    disconnect: (ssuObjectId: string) => Promise<void>;
+    signConnectTx: (params: { storageUnitId: string; ownerCapId: string; tribeId: string; characterId?: string; worldPackageId?: string }) => Promise<{ digest: string } | { error: string }>;
+    getHistory: (ssuId: string) => Promise<StorageHistoryEntry[]>;
   };
   tribeTodo: {
     list: () => Promise<TribeTodo[]>;
@@ -102,8 +197,17 @@ export interface EFOverlayAPI {
     get: () => Promise<{
       gameLogDir?: string;
       skipLogPrompt?: boolean;
+      worldContractsPackageId?: string;
+      contractsApiBase?: string;
+      storageApiBase?: string;
     }>;
-    set: (settings: { gameLogDir?: string; skipLogPrompt?: boolean }) => Promise<void>;
+    set: (settings: {
+      gameLogDir?: string;
+      skipLogPrompt?: boolean;
+      worldContractsPackageId?: string;
+      contractsApiBase?: string;
+      storageApiBase?: string;
+    }) => Promise<void>;
   };
   app?: {
     openLogFolder: () => Promise<string>;
@@ -112,7 +216,16 @@ export interface EFOverlayAPI {
     setSkipLogPrompt: () => Promise<void>;
   };
   auth?: {
-    getSession: () => Promise<{ walletAddress: string; sessionId?: string; expiresAt?: number; tribeId?: string; tribeName?: string; tribeResolvedAt?: number } | null>;
+    getSession: () => Promise<{
+      walletAddress: string;
+      sessionId?: string;
+      expiresAt?: number;
+      tribeId?: string;
+      tribeName?: string;
+      tribeResolvedAt?: number;
+      characterId?: string;
+      characterName?: string;
+    } | null>;
     login: () => Promise<{ walletAddress: string } | { error: string }>;
     logout: () => Promise<void>;
     cancel: () => Promise<void>;

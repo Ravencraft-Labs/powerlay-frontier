@@ -11,6 +11,7 @@ import { startAuthServer } from "./auth/authServer.js";
 import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
 import { registerScoutHandlers } from "./ipc/scoutHandlers.js";
+import { registerStorageHandlers } from "./ipc/storageHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
@@ -401,19 +402,20 @@ function registerAppProtocol(): void {
 app.whenReady().then(async () => {
   registerAppProtocol();
   registerTodoHandlers();
-  registerContractsHandlers();
   registerBuildHandlers();
   registerGameDataHandlers();
   registerSettingsHandlers();
   registerMiningHandlers();
 
   const authServer = await startAuthServer();
+  registerContractsHandlers(authServer);
   registerAuthHandlers(authServer, () => {
     mainWindow?.show();
     mainWindow?.focus();
   });
   registerTribeHandlers();
   registerScoutHandlers();
+  registerStorageHandlers(authServer);
 
   ipcMain.handle("app:open-log-folder", async () => {
     const dir = getAppLogDir();
@@ -460,8 +462,12 @@ app.whenReady().then(async () => {
 
   const iconPath = getIconPath();
   if (iconPath) {
-    const icon = nativeImage.createFromPath(iconPath);
+    let icon = nativeImage.createFromPath(iconPath);
     if (!icon.isEmpty()) {
+      if (process.platform === "darwin") {
+        icon = icon.resize({ width: 16, height: 16 });
+        icon.setTemplateImage(true);
+      }
       tray = new Tray(icon);
       tray.setToolTip("Powerlay Frontier");
       tray.on("click", () => {

@@ -1,5 +1,47 @@
 import React, { useState, useEffect } from "react";
 
+const WORLD_PACKAGE_STILLNESS = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const WORLD_PACKAGE_UTOPIA = "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
+const CONTRACTS_API_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
+const CONTRACTS_API_UTOPIA = "https://utopia-back.ravencraft.dev/api/v1";
+
+type BackendEnvironment = "stillness" | "utopia";
+
+function environmentPresetFromValues(
+  worldPackageId: string,
+  contractsApiBase: string,
+  storageApiBase: string
+): BackendEnvironment {
+  if (
+    worldPackageId === WORLD_PACKAGE_UTOPIA &&
+    contractsApiBase === CONTRACTS_API_UTOPIA &&
+    storageApiBase === CONTRACTS_API_UTOPIA
+  ) {
+    return "utopia";
+  }
+  return "stillness";
+}
+
+function applyEnvironmentPreset(environment: BackendEnvironment): {
+  worldContractsPackageId: string;
+  contractsApiBase: string;
+  storageApiBase: string;
+} {
+  if (environment === "utopia") {
+    return {
+      worldContractsPackageId: WORLD_PACKAGE_UTOPIA,
+      contractsApiBase: CONTRACTS_API_UTOPIA,
+      storageApiBase: CONTRACTS_API_UTOPIA,
+    };
+  }
+
+  return {
+    worldContractsPackageId: WORLD_PACKAGE_STILLNESS,
+    contractsApiBase: CONTRACTS_API_STILLNESS,
+    storageApiBase: CONTRACTS_API_STILLNESS,
+  };
+}
+
 function CogIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -25,6 +67,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [gameLogDir, setGameLogDir] = useState("");
   const [skipLogPrompt, setSkipLogPrompt] = useState(false);
+  const [backendEnvironment, setBackendEnvironment] = useState<BackendEnvironment>("stillness");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -32,14 +75,25 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       window.efOverlay.settings.get().then((s) => {
         setGameLogDir(s.gameLogDir ?? "");
         setSkipLogPrompt(s.skipLogPrompt ?? false);
+        setBackendEnvironment(
+          environmentPresetFromValues(
+            (s.worldContractsPackageId ?? WORLD_PACKAGE_STILLNESS).trim(),
+            (s.contractsApiBase ?? CONTRACTS_API_STILLNESS).trim(),
+            (s.storageApiBase ?? CONTRACTS_API_STILLNESS).trim()
+          )
+        );
       });
     }
   }, [isOpen]);
 
   const handleSave = () => {
+    const preset = applyEnvironmentPreset(backendEnvironment);
     window.efOverlay?.settings?.set({
       gameLogDir: gameLogDir || undefined,
       skipLogPrompt: skipLogPrompt || undefined,
+      worldContractsPackageId: preset.worldContractsPackageId,
+      contractsApiBase: preset.contractsApiBase,
+      storageApiBase: preset.storageApiBase,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -121,6 +175,31 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             />
             <span className="text-sm text-text">Show log locate prompt on next launch</span>
           </label>
+        </section>
+
+        <section className={sectionCls}>
+          <h3 className="text-sm font-semibold text-text mb-2">Server</h3>
+          <p className="text-xs text-muted mb-2">
+            Choose which Powerlay deployment the desktop app should use.
+          </p>
+          <div className="space-y-2">
+            <label className="text-muted text-xs block">Target server</label>
+            <select
+              className="w-full px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm"
+              value={backendEnvironment}
+              onChange={(e) => setBackendEnvironment(e.target.value as BackendEnvironment)}
+            >
+              <option value="stillness">Stillness</option>
+              <option value="utopia">Utopia</option>
+            </select>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"
+              onClick={handleSave}
+            >
+              {saved ? "Saved" : "Save"}
+            </button>
+          </div>
         </section>
 
         <section className={sectionCls}>

@@ -29,6 +29,10 @@ export interface AppSession {
   tribeId?: string;
   tribeName?: string;
   tribeResolvedAt?: number;
+  /** On-chain Character object ID — needed for Character-owned OwnerCap operations. */
+  characterId?: string;
+  /** Character display name from Character.json.metadata.name — used as X-Nickname. */
+  characterName?: string;
 }
 
 export function loadSession(): AppSession | null {
@@ -45,6 +49,8 @@ export function loadSession(): AppSession | null {
       tribeId: typeof data.tribeId === "string" ? data.tribeId : undefined,
       tribeName: typeof data.tribeName === "string" ? data.tribeName : undefined,
       tribeResolvedAt: typeof data.tribeResolvedAt === "number" ? data.tribeResolvedAt : undefined,
+      characterId: typeof data.characterId === "string" ? data.characterId : undefined,
+      characterName: typeof data.characterName === "string" ? data.characterName : undefined,
     };
   } catch {
     return null;
