@@ -65,3 +65,25 @@ export function saveStoredCallsign(value: string): void {
     /* ignore */
   }
 }
+
+const AUTO_REFRESH_KEY = "powerlay.contracts.auto-refresh";
+
+/** Load the set of contract IDs that have live-refresh enabled (persisted in sessionStorage). */
+export function loadAutoRefreshIds(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(AUTO_REFRESH_KEY);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+/** Persist the current live-refresh set to sessionStorage. */
+export function saveAutoRefreshIds(ids: Set<string>): void {
+  try {
+    sessionStorage.setItem(AUTO_REFRESH_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* ignore */
+  }
+}

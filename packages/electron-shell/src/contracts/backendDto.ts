@@ -12,6 +12,14 @@ export interface BackendTokenBalance {
   user_id?: string;
   currency_code?: string;
   balance?: string | number;
+  amount?: string | number;
+  balance_after?: string | number;
+  reserved?: string | number;
+  reserved_balance?: string | number;
+  available?: string | number;
+  available_balance?: string | number;
+  reference_note?: string | null;
+  created_at?: string;
 }
 
 export interface BackendContractStats {
@@ -43,6 +51,12 @@ export interface BackendContractItem {
   paid_reward_amount: string | number;
   assignee_text?: string | null;
   sort_order: number;
+  remaining_required?: string | number | null;
+  available_in_my_personal_slot?: string | number | null;
+  max_deposit_allowed?: string | number | null;
+  pending_deposit_qty?: string | number | null;
+  deposit_row_status?: string | null;
+  deposit_status_message?: string | null;
 }
 
 export interface BackendContractListRow {
@@ -65,6 +79,10 @@ export interface BackendContractListRow {
   participant_count: number;
   item_count: number;
   resource_summary: string[];
+  /** When true, backend/watcher may update progress from SSU-targeted events (optional API field). */
+  track_ssu_auto?: boolean | null;
+  /** Alias some backends may use instead of `track_ssu_auto`. */
+  ssu_tracking_enabled?: boolean | null;
   /** When present (some API versions), avoids scanning unrelated contracts for “my contracts”. */
   creator_user_id?: string | null;
   creator_wallet_address?: string | null;
@@ -101,6 +119,9 @@ export interface BackendContractDetail {
   created_at: string;
   updated_at: string;
   progress_percent: string | number;
+  /** When true, backend/watcher may update progress from SSU-targeted events (optional API field). */
+  track_ssu_auto?: boolean | null;
+  ssu_tracking_enabled?: boolean | null;
   items: BackendContractItem[];
   participants: BackendParticipant[];
 }
@@ -117,4 +138,41 @@ export interface BackendActionResponse {
   action: string;
   status?: string | null;
   message: string;
+}
+
+export interface BackendContractLogItem {
+  id?: string;
+  event_type?: string;
+  occurred_at?: string;
+  timestamp?: string;
+  /** status_change / contribution events */
+  actor_wallet?: string | null;
+  actor_nickname?: string | null;
+  /** ssu_event rows reuse storage history field names */
+  sender_wallet?: string | null;
+  character_id?: string | null;
+  description?: string | null;
+  resource_name?: string | null;
+  quantity?: string | number | null;
+  tx_hash?: string | null;
+  from_status?: string | null;
+  to_status?: string | null;
+  data?: unknown;
+}
+
+export interface BackendStorageHistoryItem {
+  id?: string;
+  event_type?: string;
+  occurred_at?: string;
+  timestamp?: string;
+  sender_wallet?: string | null;
+  character_id?: string | null;
+  actor_nickname?: string | null;
+  resource_type?: string | null;
+  resource_name?: string | null;
+  quantity?: string | number | null;
+  tx_hash?: string | null;
+  contract_id?: string | null;
+  contract_title?: string | null;
+  data?: unknown;
 }

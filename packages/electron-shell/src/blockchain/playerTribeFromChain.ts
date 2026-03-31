@@ -1,12 +1,20 @@
 /**
- * Resolve player tribe from Sui GraphQL (wallet → tribe for X-Tribe-Id).
+ * Resolve player tribe for contracts (`X-Tribe-Id` + optional display name).
  *
- * Uses official Sui GraphQL: wallet-owned `PlayerProfile` → `character_id` → `Character` Move object
- * `tribe_id` (numeric game id, sent as string in `X-Tribe-Id`).
- * Optional: Frontier World API `GET /v2/tribes/{id}` for display name (see Scetrov World API notes).
+ * **EVE Frontier + Sui (source of truth):** Tribe membership for tooling is the numeric **`tribe_id`**
+ * field on the on-chain **`Character`** Move object. The game is responsible for writing/updating that
+ * field when the player’s tribe changes; the app only reads it. The wallet address owns a
+ * **`PlayerProfile`** whose `character_id` points at that `Character`.
  *
- * GraphQL URL: settings `efGraphqlUrl` → env POWERLAY_EF_GRAPHQL_URL → default testnet.
- * World API base: settings `efWorldApiBaseUrl` → env POWERLAY_EF_WORLD_API_BASE → Stillness default.
+ * **Two services:** (1) **Sui GraphQL** — read `PlayerProfile` → `Character` → `tribe_id`. The app uses
+ * a single default indexer URL; override with **`POWERLAY_EF_GRAPHQL_URL`** for operators. (2) **Frontier
+ * World API** — `GET /v2/tribes/{id}` maps that id to a **display name** for the UI. The World API base
+ * is chosen from the **`PlayerProfile` type’s world package** (Utopia vs Stillness — see CCP Resources).
+ * Operators may force a base with **`POWERLAY_EF_WORLD_API_BASE`** or skip name lookup with
+ * **`POWERLAY_EF_WORLD_API_DISABLE`**.
+ *
+ * **Multiple `PlayerProfile`s:** Prefer **Utopia** package, then **Stillness**, then the first profile
+ * in GraphQL order.
  *
  * @see docs/contracts-integration.md
  */
@@ -15,19 +23,24 @@ import { loadSettings } from "../ipc/settingsStore.js";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_WORLD_API_TIMEOUT_MS = 8_000;
 
-/** Default Sui testnet GraphQL; override in Settings or POWERLAY_EF_GRAPHQL_URL. */
+/** Default Sui testnet GraphQL; override with POWERLAY_EF_GRAPHQL_URL. */
 export const DEFAULT_EF_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql";
 
 /**
- * Default Frontier World API (Stillness production). Override via Settings or POWERLAY_EF_WORLD_API_BASE for dev/other hosts.
+ * Default Frontier World API (Stillness production).
  * @see https://world-api-stillness.live.tech.evefrontier.com/docs/index.html
  */
 export const DEFAULT_EF_WORLD_API_BASE_URL = "https://world-api-stillness.live.tech.evefrontier.com";
 
+/**
+ * Default Frontier World API (Utopia sandbox).
+ * @see https://docs.evefrontier.com/tools/resources
+ */
+export const DEFAULT_EF_WORLD_API_UTOPIA_URL = "https://world-api-utopia.uat.pub.evefrontier.com";
+
+type PlayerProfilePackageKind = "utopia" | "stillness" | "unknown";
+
 export function getEffectiveEfGraphqlUrl(): string {
-  const s = loadSettings();
-  const fromSettings = s.efGraphqlUrl?.trim();
-  if (fromSettings) return fromSettings;
   const fromEnv = process.env.POWERLAY_EF_GRAPHQL_URL?.trim();
   if (fromEnv) return fromEnv;
   return DEFAULT_EF_GRAPHQL_URL;
@@ -42,15 +55,18 @@ export function getPlayerTribeFetchTimeoutMs(): number {
   return DEFAULT_TIMEOUT_MS;
 }
 
-export function getEffectiveWorldApiBaseUrl(): string {
+/**
+ * World API base for tribe display names, given which world package the chosen `PlayerProfile` belongs to.
+ * Empty string disables HTTP (same as `POWERLAY_EF_WORLD_API_DISABLE`).
+ */
+export function resolveWorldApiBaseUrlForPackageKind(packageKind: PlayerProfilePackageKind): string {
   const dis = process.env.POWERLAY_EF_WORLD_API_DISABLE?.trim().toLowerCase();
   if (dis === "1" || dis === "true" || dis === "yes") return "";
 
-  const s = loadSettings();
-  const fromSettings = s.efWorldApiBaseUrl?.trim();
-  if (fromSettings) return fromSettings;
-  const fromEnv = process.env.POWERLAY_EF_WORLD_API_BASE?.trim();
-  if (fromEnv) return fromEnv;
+  const override = process.env.POWERLAY_EF_WORLD_API_BASE?.trim();
+  if (override) return override;
+
+  if (packageKind === "utopia") return DEFAULT_EF_WORLD_API_UTOPIA_URL;
   return DEFAULT_EF_WORLD_API_BASE_URL;
 }
 
@@ -66,7 +82,17 @@ export function getWorldApiTribeFetchTimeoutMs(): number {
 export interface PlayerTribeResult {
   tribeId: string;
   tribeName?: string;
+  /** On-chain Character object ID for the wallet's PlayerProfile. */
+  characterId?: string;
+  /** Character display name from Character.json.metadata.name (EVE Frontier on-chain). */
+  characterName?: string;
 }
+
+/** World Package object ids — https://docs.evefrontier.com/tools/resources */
+export const FRONTIER_WORLD_PACKAGE_UTOPIA =
+  "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
+export const FRONTIER_WORLD_PACKAGE_STILLNESS =
+  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
 
 const WALLET_OBJECTS_QUERY = `
   query WalletProfileObjects($address: SuiAddress!) {
@@ -134,8 +160,10 @@ export async function queryPlayerTribeFromChain(
     const profileJson = (await profileRes.json()) as unknown;
     if (graphqlErrors(profileJson)) return null;
 
-    const characterId = findCharacterIdFromWalletResponse(profileJson);
-    if (!characterId) return null;
+    const profiles = collectPlayerProfilesFromWalletJson(profileJson);
+    const picked = pickPlayerProfileForTribe(profiles);
+    if (!picked) return null;
+    const { characterId, packageKind } = picked;
 
     const charRes = await fetch(url, {
       method: "POST",
@@ -155,18 +183,41 @@ export async function queryPlayerTribeFromChain(
     const parsed = parseTribeFromCharacterResponse(charJson);
     if (!parsed) return null;
 
-    const worldBase = getEffectiveWorldApiBaseUrl().trim();
+    const worldBase = resolveWorldApiBaseUrlForPackageKind(packageKind).trim();
     if (worldBase) {
       const tribeName = await fetchTribeNameFromWorldApi(worldBase, parsed.tribeId);
       if (tribeName) parsed.tribeName = tribeName;
     }
 
+    parsed.characterId = characterId;
     return parsed;
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * In-memory cache: wallet address (lowercase) → character name or null.
+ * null means we already looked and found nothing; skip re-querying within the same session.
+ */
+const characterNameCache = new Map<string, string | null>();
+
+/**
+ * Resolve a character display name for a wallet address.
+ * Reuses the full tribe query path (same two GraphQL round-trips) and caches results
+ * so repeated calls for the same wallet within an app session are free.
+ * Returns null if not found or on any error.
+ */
+export async function queryCharacterNameFromChain(walletAddress: string): Promise<string | null> {
+  const key = walletAddress.trim().toLowerCase();
+  if (!key) return null;
+  if (characterNameCache.has(key)) return characterNameCache.get(key) ?? null;
+  const result = await queryPlayerTribeFromChain(walletAddress);
+  const name = result?.characterName ?? null;
+  characterNameCache.set(key, name);
+  return name;
 }
 
 function worldApiTribesUrl(baseUrl: string, tribeId: string): string {
@@ -229,19 +280,65 @@ function graphqlErrors(json: unknown): boolean {
   return Array.isArray(errs) && errs.length > 0;
 }
 
-function findCharacterIdFromWalletResponse(json: unknown): string | null {
+function packageKindFromPlayerProfileTypeRepr(typeRepr: string): PlayerProfilePackageKind {
+  const lower = typeRepr.toLowerCase();
+  const u = FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase();
+  const s = FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase();
+  if (lower.startsWith(`${u}::`)) return "utopia";
+  if (lower.startsWith(`${s}::`)) return "stillness";
+  return "unknown";
+}
+
+function collectPlayerProfilesFromWalletJson(json: unknown): { characterId: string; packageKind: PlayerProfilePackageKind }[] {
   type Node = { contents?: { type?: { repr?: string }; json?: Record<string, unknown> } };
   const nodes = (json as { data?: { address?: { objects?: { nodes?: Node[] } } } })?.data?.address?.objects
     ?.nodes;
-  if (!Array.isArray(nodes)) return null;
+  if (!Array.isArray(nodes)) return [];
 
+  const out: { characterId: string; packageKind: PlayerProfilePackageKind }[] = [];
   for (const n of nodes) {
     const repr = n?.contents?.type?.repr ?? "";
     if (!repr.includes("::character::PlayerProfile")) continue;
     const raw = n?.contents?.json?.character_id;
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    out.push({
+      characterId: raw.trim(),
+      packageKind: packageKindFromPlayerProfileTypeRepr(repr),
+    });
   }
-  return null;
+  return out;
+}
+
+function pickPlayerProfileForTribe(
+  profiles: { characterId: string; packageKind: PlayerProfilePackageKind }[]
+): { characterId: string; packageKind: PlayerProfilePackageKind } | null {
+  if (profiles.length === 0) return null;
+  if (profiles.length === 1) return profiles[0];
+
+  const worldPkg = loadSettings().worldContractsPackageId?.trim().toLowerCase() ?? "";
+  const preferStillness = worldPkg === FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase();
+  const preferUtopia = worldPkg === FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase();
+
+  if (preferStillness) {
+    const s = profiles.find((x) => x.packageKind === "stillness");
+    if (s) return s;
+    const u = profiles.find((x) => x.packageKind === "utopia");
+    if (u) return u;
+  }
+
+  if (preferUtopia) {
+    const u = profiles.find((x) => x.packageKind === "utopia");
+    if (u) return u;
+    const s = profiles.find((x) => x.packageKind === "stillness");
+    if (s) return s;
+  }
+
+  // Backward-compatible fallback when no explicit world package preference is configured.
+  const u = profiles.find((x) => x.packageKind === "utopia");
+  if (u) return u;
+  const s = profiles.find((x) => x.packageKind === "stillness");
+  if (s) return s;
+  return profiles[0];
 }
 
 function parseTribeFromCharacterResponse(json: unknown): PlayerTribeResult | null {
@@ -251,12 +348,24 @@ function parseTribeFromCharacterResponse(json: unknown): PlayerTribeResult | nul
   const repr = contents.type?.repr ?? "";
   if (!repr.includes("::character::Character")) return null;
 
-  const tid = contents.json?.tribe_id;
+  const charJson = contents.json ?? {};
+
+  const tid = charJson.tribe_id;
+  let tribeId: string | null = null;
   if (typeof tid === "number" && Number.isFinite(tid) && tid > 0) {
-    return { tribeId: String(Math.trunc(tid)) };
+    tribeId = String(Math.trunc(tid));
+  } else if (typeof tid === "string" && tid.trim()) {
+    tribeId = tid.trim();
   }
-  if (typeof tid === "string" && tid.trim()) {
-    return { tribeId: tid.trim() };
+  if (!tribeId) return null;
+
+  // Character display name lives at Character.json.metadata.name (EVE Frontier on-chain struct)
+  const metadata = charJson.metadata;
+  let characterName: string | undefined;
+  if (metadata && typeof metadata === "object") {
+    const n = (metadata as Record<string, unknown>).name;
+    if (typeof n === "string" && n.trim()) characterName = n.trim();
   }
-  return null;
+
+  return { tribeId, ...(characterName ? { characterName } : {}) };
 }

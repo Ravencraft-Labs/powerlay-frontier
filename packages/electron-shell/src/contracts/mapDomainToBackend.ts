@@ -53,6 +53,8 @@ export function mapCreateDraftToBackendWithExistingLineIds(
   };
   if (input.description?.trim()) body.description = input.description.trim();
   if (input.expiresAt != null) body.expires_at = new Date(input.expiresAt).toISOString();
+  if (input.trackSsuAuto === true) body.track_ssu_auto = true;
+  else if (input.trackSsuAuto === false) body.track_ssu_auto = false;
   return body;
 }
 
@@ -70,6 +72,8 @@ export function mapCreateDraftToBackend(input: CreateDraftInput): Record<string,
   };
   if (input.description?.trim()) body.description = input.description.trim();
   if (input.expiresAt != null) body.expires_at = new Date(input.expiresAt).toISOString();
+  if (input.trackSsuAuto === true) body.track_ssu_auto = true;
+  else if (input.trackSsuAuto === false) body.track_ssu_auto = false;
   return body;
 }
 
@@ -79,6 +83,7 @@ export function mapUpdateDraftToBackend(patch: UpdateDraftInput): Record<string,
   if (patch.description !== undefined) body.description = patch.description?.trim() || null;
   if (patch.targetStarSystem != null) body.target_star_system = patch.targetStarSystem;
   if (patch.targetSsuId != null) body.target_ssu_id = patch.targetSsuId;
+  if (patch.trackSsuAuto !== undefined) body.track_ssu_auto = patch.trackSsuAuto;
   if (patch.visibility != null) body.visibility = patch.visibility;
   if (patch.priority != null) body.priority = patch.priority;
   if (patch.lines != null) {

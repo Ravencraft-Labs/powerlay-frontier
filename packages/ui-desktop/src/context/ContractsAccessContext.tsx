@@ -27,7 +27,7 @@ export function useContractsAccess(): ContractsAccessContextValue {
 }
 
 export function ContractsAccessProvider({ children }: { children: React.ReactNode }) {
-  const { session } = useAuth();
+  const { session, refreshSession } = useAuth();
   const [status, setStatus] = useState<ContractsAccessStatus>("idle");
   const [tribeId, setTribeId] = useState<string | null>(null);
   const [tribeName, setTribeName] = useState<string | null>(null);
@@ -50,6 +50,7 @@ export function ContractsAccessProvider({ children }: { children: React.ReactNod
         setTribeId(result.tribeId);
         setTribeName(result.tribeName ?? s?.tribeName ?? null);
         setStatus("ready");
+        await refreshSession();
       } else {
         setTribeId(s?.tribeId ?? null);
         setTribeName(s?.tribeName ?? null);
@@ -62,7 +63,7 @@ export function ContractsAccessProvider({ children }: { children: React.ReactNod
       setTribeId(null);
       setTribeName(null);
     }
-  }, []);
+  }, [refreshSession]);
 
   useEffect(() => {
     if (!session?.walletAddress) {
@@ -73,14 +74,6 @@ export function ContractsAccessProvider({ children }: { children: React.ReactNod
       return;
     }
     refreshTribe();
-  }, [session?.walletAddress, refreshTribe]);
-
-  useEffect(() => {
-    const onSettingsSaved = () => {
-      if (session?.walletAddress) void refreshTribe();
-    };
-    window.addEventListener("powerlay:settings-saved", onSettingsSaved);
-    return () => window.removeEventListener("powerlay:settings-saved", onSettingsSaved);
   }, [session?.walletAddress, refreshTribe]);
 
   const allowTribeScopes = status === "ready" && !!tribeId;

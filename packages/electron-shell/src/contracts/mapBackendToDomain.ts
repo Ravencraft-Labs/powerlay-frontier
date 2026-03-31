@@ -38,6 +38,17 @@ function mapPriority(raw: string | null | undefined): ContractPriority {
   return "medium";
 }
 
+/** Backend may send `track_ssu_auto` or `ssu_tracking_enabled` (optional). */
+function readTrackSsuAuto(
+  d: BackendContractDetail | BackendContractListRow
+): boolean | undefined {
+  const a = d.track_ssu_auto;
+  const b = d.ssu_tracking_enabled;
+  if (typeof a === "boolean") return a;
+  if (typeof b === "boolean") return b;
+  return undefined;
+}
+
 function mapStatus(raw: string | undefined): ContractLifecycleStatus {
   const s = (raw ?? "draft").toLowerCase().replace(/-/g, "_");
   if (s === "in_progress") return "in_progress";
@@ -63,13 +74,23 @@ function mapItem(it: BackendContractDetail["items"][0]): ContractResourceLine {
     assigneeText: it.assignee_text?.trim() || undefined,
     sortOrder: typeof it.sort_order === "number" ? it.sort_order : undefined,
     paidRewardAmount: decNum(it.paid_reward_amount),
+    ...(it.remaining_required != null ? { remainingRequired: decNum(it.remaining_required) } : {}),
+    ...(it.available_in_my_personal_slot != null ? { availableInMyPersonalSlot: decNum(it.available_in_my_personal_slot) } : {}),
+    ...(it.max_deposit_allowed != null ? { maxDepositAllowed: decNum(it.max_deposit_allowed) } : {}),
+    ...(it.pending_deposit_qty != null ? { pendingDepositQty: decNum(it.pending_deposit_qty) } : {}),
+    ...(it.deposit_row_status?.trim() ? { depositRowStatus: it.deposit_row_status.trim().toLowerCase() } : {}),
+    ...(it.deposit_status_message?.trim() ? { depositStatusMessage: it.deposit_status_message.trim() } : {}),
   };
 }
 
 function mapParticipant(p: BackendParticipant, idx: number): ContractParticipant {
+  // Treat "string" as absent — it is the Pydantic OpenAPI default that sometimes ends up as
+  // legacy test data; real nicknames are user-set or resolved from chain.
+  const rawNick = p.nickname?.trim();
+  const nickname = rawNick && rawNick !== "string" ? rawNick : undefined;
   return {
     id: String(p.user_id ?? `p-${idx}`),
-    displayName: p.nickname?.trim() || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
+    displayName: nickname || p.wallet_address?.trim() || String(p.user_id).slice(0, 8),
     walletAddress: p.wallet_address ?? undefined,
     joinedAt: Date.parse(p.joined_at) || 0,
   };
@@ -78,12 +99,14 @@ function mapParticipant(p: BackendParticipant, idx: number): ContractParticipant
 export function mapContractDetailToLogistics(d: BackendContractDetail): LogisticsContract {
   const createdAt = Date.parse(d.created_at) || 0;
   const updatedAt = Date.parse(d.updated_at) || createdAt;
+  const track = readTrackSsuAuto(d);
   return {
     id: String(d.id),
     title: d.title,
     description: d.description ?? undefined,
     targetStarSystem: d.target_star_system || d.target_system_name,
     targetSsuId: d.target_ssu_id,
+    ...(track !== undefined ? { trackSsuAuto: track } : {}),
     visibility: mapVisibility(d.visibility ?? d.visibility_scope),
     priority: mapPriority(d.priority),
     status: mapStatus(d.status),
@@ -131,12 +154,14 @@ export function listRowCreatorMatch(
 
 export function mapListRowToBrowseSummary(row: BackendContractListRow): ContractBrowseSummary {
   const createdAt = Date.parse(row.created_at) || 0;
+  const track = readTrackSsuAuto(row);
   const contract: LogisticsContract = {
     id: String(row.id),
     title: row.title,
     description: row.description ?? undefined,
     targetStarSystem: row.target_star_system || row.target_system_name,
     targetSsuId: row.target_ssu_id,
+    ...(track !== undefined ? { trackSsuAuto: track } : {}),
     visibility: mapVisibility(row.visibility ?? row.visibility_scope),
     priority: mapPriority(row.priority),
     status: mapStatus(row.status),
@@ -156,12 +181,18 @@ export function mapListRowToBrowseSummary(row: BackendContractListRow): Contract
 }
 
 export function mapTokenBalance(b: BackendTokenBalance): { balance: number; reserved: number; available: number } {
-  const balance = decNum(b.balance);
-  return {
-    balance,
-    reserved: 0,
-    available: balance,
-  };
+  const balance =
+    b.balance != null
+      ? decNum(b.balance)
+      : b.balance_after != null
+        ? decNum(b.balance_after)
+        : decNum(b.amount);
+  const reserved = decNum(b.reserved ?? b.reserved_balance);
+  // Prefer explicit available field; fall back to balance − reserved
+  const available = (b.available != null || b.available_balance != null)
+    ? decNum(b.available ?? b.available_balance)
+    : Math.max(0, balance - reserved);
+  return { balance, reserved, available };
 }
 
 export function mapContractStats(s: BackendContractStats): ContractStats {
@@ -189,9 +220,27 @@ export function mapPublishFailure(code: string | undefined, message: string): Pu
 
 export function parseErrorBody(json: unknown): { code: string; message: string } {
   const b = json as BackendErrorBody;
+  const detail = b?.details;
+  const detailText = Array.isArray(detail)
+    ? detail
+        .map((item) => {
+          if (!item || typeof item !== "object") return String(item);
+          const rec = item as Record<string, unknown>;
+          const path = Array.isArray(rec.loc) ? rec.loc.map((x) => String(x)).join(".") : "";
+          const msg = typeof rec.msg === "string" ? rec.msg : "";
+          return [path, msg].filter(Boolean).join(": ");
+        })
+        .filter((s) => s.trim().length > 0)
+        .join("; ")
+    : typeof detail === "string"
+      ? detail
+      : "";
   return {
     code: typeof b?.code === "string" ? b.code : "UNKNOWN",
-    message: typeof b?.message === "string" ? b.message : "Request failed.",
+    message:
+      typeof b?.message === "string"
+        ? b.message
+        : detailText || "Request failed.",
   };
 }
 

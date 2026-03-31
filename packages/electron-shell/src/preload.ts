@@ -16,6 +16,22 @@ contextBridge.exposeInMainWorld("efOverlay", {
     cancel: (contractId: string) => ipcRenderer.invoke("contracts:cancel", contractId),
     completeContract: (contractId: string) => ipcRenderer.invoke("contracts:complete-contract", contractId),
     getBackendStatus: () => ipcRenderer.invoke("contracts:backend-status"),
+    getLogs: (id: string) => ipcRenderer.invoke("contracts:get-logs", id),
+    signDeliveryTx: (params: unknown) => ipcRenderer.invoke("contracts:sign-delivery-tx", params),
+    recordDelivery: (contractId: string, body: unknown) =>
+      ipcRenderer.invoke("contracts:record-delivery", contractId, body),
+    submitDepositAttempt: (contractId: string, body: unknown) =>
+      ipcRenderer.invoke("contracts:submit-deposit-attempt", contractId, body),
+  },
+  storage: {
+    listConnected: () => ipcRenderer.invoke("storage:list-connected"),
+    discoverWalletSsus: () => ipcRenderer.invoke("storage:discover-wallet-ssus"),
+    register: (ssuObjectId: string, txHash: string, name?: string) =>
+      ipcRenderer.invoke("storage:register", ssuObjectId, txHash, name),
+    disconnect: (ssuObjectId: string) => ipcRenderer.invoke("storage:disconnect", ssuObjectId),
+    signConnectTx: (params: { storageUnitId: string; ownerCapId: string; tribeId: string; characterId?: string; worldPackageId?: string }) =>
+      ipcRenderer.invoke("storage:sign-connect-tx", params),
+    getHistory: (ssuId: string) => ipcRenderer.invoke("storage:get-history", ssuId),
   },
   tribeTodo: {
     list: () => ipcRenderer.invoke("tribe-todo:list"),
@@ -66,9 +82,11 @@ contextBridge.exposeInMainWorld("efOverlay", {
     set: (settings: {
       gameLogDir?: string;
       skipLogPrompt?: boolean;
-      efGraphqlUrl?: string;
-      efWorldApiBaseUrl?: string;
-    }) => ipcRenderer.invoke("settings:set", settings),
+      worldContractsPackageId?: string;
+      contractsApiBase?: string;
+      storageApiBase?: string;
+    }) =>
+      ipcRenderer.invoke("settings:set", settings),
   },
   app: {
     openLogFolder: () => ipcRenderer.invoke("app:open-log-folder"),

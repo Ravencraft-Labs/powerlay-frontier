@@ -1,8 +1,61 @@
 # Powerlay Frontier
 
-Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/mining engine, and desktop dashboard.
+**Community desktop companion for [EVE Frontier](https://evefrontier.com)** — production and mining planning, tribe coordination via contracts, and transparent in-game overlays. Available for **Windows** and **macOS**.
+
+> 🚧 Active development 🚧 <br>
+> Latest features and changes are in [Releases](https://github.com/Ravencraft-Labs/powerlay-frontier/releases)
+
+Some features (Contracts, Scout) interact with the SUI Network and require a connected **EVE Wallet**.
 
 **Community tool — not affiliated with CCP Games.** All game-related names, images, and assets are trademarks and/or copyrights of CCP hf.
+
+---
+
+## Modules
+
+| Module | Status | Description |
+|--------|--------|-------------|
+| **Builder** | **stable** | Blueprints, production calculator, mining helper, ingredient breakdowns |
+| **Contracts** | WIP | Create tribe and public contracts for coordination and rewards — requires EVE Wallet |
+| **Scout** | WIP | System scanning and tracking tools|
+| **Overlay** | **stable** | Transparent always-on-top panels rendered over the game window - available in different modules|
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><b>Builder</b></td>
+    <td align="center"><b>Different reciepes support</b></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/overview.png"><img src="docs/screenshots/preview/overview.png" width="400"/></a></td>
+    <td><a href="docs/screenshots/builder.png"><img src="docs/screenshots/preview/builder.png" width="400"/></a></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Contracts</b></td>
+    <td align="center"><b>Scout</b></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/contracts.png"><img src="docs/screenshots/preview/contracts.png" width="400"/></a></td>
+    <td><a href="docs/screenshots/scout.png"><img src="docs/screenshots/preview/scout.png" width="400"/></a></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><b>In-game Overlays</b></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="docs/screenshots/overlay-ingame.png"><img src="docs/screenshots/preview/overlay-ingame.png" width="820"/></a></td>
+  </tr>
+</table>
+
+---
+
+## Safe Overlay Philosophy
+
+Powerlay does not automate gameplay, read process memory, or inject into the game. The overlay is a separate transparent window — nothing touches the EVE Frontier client.
+
+---
 
 ## Developer Setup
 
@@ -11,7 +64,32 @@ Desktop companion app for EVE Frontier. Phase 1: Tribe TODO overlay, mock build/
 
 ```bash
 pnpm install
+pnpm dev        # Start desktop UI (:5173), overlay UI (:5174), and Electron
 ```
+
+### Build
+
+Windows
+
+```bash
+pnpm build              # Build all packages
+pnpm run build:portable     # Build Windows portable .exe (output in dist/)
+```
+
+macOS
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run build:mac    # Build unsigned macOS package (output in dist/)
+```
+
+### Test & Lint
+
+```bash
+pnpm test
+pnpm lint
+```
+
+---
 
 ## Game data (required for Builder features)
 
@@ -49,18 +127,19 @@ Without these files, the Builder tab will show a "Types loaded but empty" or "Fi
 
 - **`pnpm dev`** — Start desktop UI (Vite :5173), overlay UI (Vite :5174), then Electron. Use "Toggle overlay" in the desktop to show/hide the overlay.
 - **`pnpm build`** — Build all packages.
-- **`pnpm build:portable`** — Build all packages and produce a Windows portable executable (no installer). Output is in `dist/`.
+- **`pnpm run build:portable`** — Build all packages and produce a Windows portable executable (no installer). Output is in `dist/`.
+- **`pnpm run build:mac`** — Build Mac package. Output is in `dist/`.
 - **`pnpm test`** — Run tests (core package).
 - **`pnpm lint`** — Lint all packages.
 - **`pnpm strip-data`** — Generate `data/stripped/types.json`, `data/stripped/oreGroupIDs.json`, and optionally `data/stripped/solarsystems.json` and `data/stripped/structure_recipes.json` from `data/raw/`. Requires `types.json` and `groups.json`. Run after placing fresh game data. See `data/raw/README.md` for full schema and file details.
-- **`pnpm debug-graphql`** — List owned objects and print resolved **`tribe_id`** (EVE `PlayerProfile` → `Character`) via official Sui GraphQL (`pnpm debug-graphql -- <address> [url]`). Use **Copy address** in the header. See `docs/contracts-integration.md`.
+- **`pnpm debug-graphql`** — Inspect GraphQL + optional `chainIdentifier` / Frontier package checks; resolves **`tribe_id`** like the app (`PlayerProfile` → `Character`, profile pick Utopia → Stillness → first). `pnpm debug-graphql -- <address> [url]`. Optional **`POWERLAY_EF_WORLD_API_BASE`** mirrors the app’s operator override for World API. See `docs/contracts-integration.md`.
 
 ## Structure
 
 - `packages/core` — Pure logic (mining/build engine, contracts domain types, Tribe TODO helpers). No Electron/React.
 - `packages/ui-desktop` — Main dashboard (Contracts, Builder, wallet login).
 - `packages/ui-overlay` — Transparent overlay panel (contracts quick list, build tracking).
-- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure via env as in `docs/contracts-integration.md` (do not publish production URLs in public docs). Tribe id comes from Sui GraphQL; an **optional** HTTP lookup can fill tribe **display name** — variable names and defaults live in source / the same doc overview.
+- `packages/electron-shell` — Main process, preload, IPC; contracts use a **configurable HTTP API** or an in-app mock. Configure **`POWERLAY_API_BASE`** (and related vars) as in `docs/contracts-integration.md` (do not publish production URLs in public docs). **Tribe:** on-chain **`Character.tribe_id`** via Sui GraphQL (default indexer + optional **`POWERLAY_EF_GRAPHQL_URL`**); Frontier **World API** for display name follows the profile’s world package — see `docs/contracts-integration.md`.
 
 ## Safe Overlay Philosophy
 

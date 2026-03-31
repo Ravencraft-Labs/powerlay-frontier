@@ -11,6 +11,12 @@ export interface AuthSession {
   walletAddress: string;
   sessionId?: string;
   expiresAt?: number;
+  tribeId?: string;
+  tribeName?: string;
+  tribeResolvedAt?: number;
+  /** Set after successful tribe/chain resolve (same session file the main process uses). */
+  characterId?: string;
+  characterName?: string;
 }
 
 interface AuthContextValue {
@@ -20,6 +26,8 @@ interface AuthContextValue {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   cancel: () => Promise<void>;
+  /** Re-read session.json (e.g. after tribe resolve updates character/tribe on disk). */
+  refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,7 +46,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadSession = useCallback(async () => {
     const s = await window.efOverlay?.auth?.getSession();
     if (s?.walletAddress) {
-      setSession(s);
+      setSession({
+        walletAddress: s.walletAddress,
+        sessionId: s.sessionId,
+        expiresAt: s.expiresAt,
+        tribeId: s.tribeId,
+        tribeName: s.tribeName,
+        tribeResolvedAt: s.tribeResolvedAt,
+        characterId: s.characterId,
+        characterName: s.characterName,
+      });
       setStatus("authenticated");
       setError(null);
     } else {
@@ -48,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    loadSession();
+    void loadSession();
   }, [loadSession]);
 
   const login = useCallback(async () => {
@@ -58,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await window.efOverlay.auth.login();
       if ("walletAddress" in result) {
-        setSession({ walletAddress: result.walletAddress });
+        await loadSession();
         setStatus("authenticated");
         setError(null);
       } else {
@@ -69,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStatus("authFailed");
       setError(err instanceof Error ? err.message : "Login failed");
     }
-  }, []);
+  }, [loadSession]);
 
   const logout = useCallback(async () => {
     await window.efOverlay?.auth?.logout?.();
@@ -90,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     cancel,
+    refreshSession: loadSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

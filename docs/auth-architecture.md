@@ -26,7 +26,7 @@ The session model keeps auth and blockchain access separate: auth proves identit
 1. User logs in via the browser auth flow
 2. Session is persisted to `userData/Powerlay/session.json`
 3. `getWalletAddress()` (in `blockchain/blockchainReads.ts`) reads from the session store
-4. **Tribe resolution** (`tribeResolve.ts`): When the user is signed in, the app calls `resolvePlayerTribe()`, which uses `queryPlayerTribeFromChain()` (`playerTribeFromChain.ts`): Sui GraphQL **wallet → `PlayerProfile.character_id` → `Character.tribe_id`**, then **`GET /v2/tribes/{id}`** on the Frontier **World API** for display name when enabled. Session stores **`tribeId`** (for **`X-Tribe-Id`**) and optional **`tribeName`** from the API (`name` / `nameShort`).
+4. **Tribe resolution** (`tribeResolve.ts`): When the user is signed in, the app calls `resolvePlayerTribe()` → `queryPlayerTribeFromChain()` (`playerTribeFromChain.ts`). **On-chain:** GraphQL reads **wallet → `PlayerProfile.character_id` → `Character.tribe_id`** (the game writes `tribe_id` on `Character`). **Display name:** optional **`GET /v2/tribes/{id}`** on the Frontier **World API**; the app picks the World API host from the **`PlayerProfile` world package** (Utopia vs Stillness), with optional env overrides documented in `docs/contracts-integration.md`. Session stores **`tribeId`** (for the **X-Tribe-Id** header) and optional **`tribeName`**.
 
 ## What Must Happen Later for Signed Transactions
 

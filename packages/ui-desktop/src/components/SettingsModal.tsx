@@ -1,8 +1,46 @@
 import React, { useState, useEffect } from "react";
 
-/** Must match defaults in electron-shell `playerTribeFromChain.ts` */
-const DEFAULT_EF_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql";
-const DEFAULT_EF_WORLD_API_BASE_URL = "https://world-api-stillness.live.tech.evefrontier.com";
+const WORLD_PACKAGE_STILLNESS = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const WORLD_PACKAGE_UTOPIA = "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
+const CONTRACTS_API_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
+const CONTRACTS_API_UTOPIA = "https://utopia-back.ravencraft.dev/api/v1";
+
+type BackendEnvironment = "stillness" | "utopia";
+
+function environmentPresetFromValues(
+  worldPackageId: string,
+  contractsApiBase: string,
+  storageApiBase: string
+): BackendEnvironment {
+  if (
+    worldPackageId === WORLD_PACKAGE_UTOPIA &&
+    contractsApiBase === CONTRACTS_API_UTOPIA &&
+    storageApiBase === CONTRACTS_API_UTOPIA
+  ) {
+    return "utopia";
+  }
+  return "stillness";
+}
+
+function applyEnvironmentPreset(environment: BackendEnvironment): {
+  worldContractsPackageId: string;
+  contractsApiBase: string;
+  storageApiBase: string;
+} {
+  if (environment === "utopia") {
+    return {
+      worldContractsPackageId: WORLD_PACKAGE_UTOPIA,
+      contractsApiBase: CONTRACTS_API_UTOPIA,
+      storageApiBase: CONTRACTS_API_UTOPIA,
+    };
+  }
+
+  return {
+    worldContractsPackageId: WORLD_PACKAGE_STILLNESS,
+    contractsApiBase: CONTRACTS_API_STILLNESS,
+    storageApiBase: CONTRACTS_API_STILLNESS,
+  };
+}
 
 function CogIcon({ className }: { className?: string }) {
   return (
@@ -29,8 +67,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [gameLogDir, setGameLogDir] = useState("");
   const [skipLogPrompt, setSkipLogPrompt] = useState(false);
-  const [efGraphqlUrl, setEfGraphqlUrl] = useState("");
-  const [efWorldApiBaseUrl, setEfWorldApiBaseUrl] = useState("");
+  const [backendEnvironment, setBackendEnvironment] = useState<BackendEnvironment>("stillness");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -38,20 +75,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       window.efOverlay.settings.get().then((s) => {
         setGameLogDir(s.gameLogDir ?? "");
         setSkipLogPrompt(s.skipLogPrompt ?? false);
-        setEfGraphqlUrl(s.efGraphqlUrl ?? "");
-        setEfWorldApiBaseUrl(s.efWorldApiBaseUrl ?? "");
+        setBackendEnvironment(
+          environmentPresetFromValues(
+            (s.worldContractsPackageId ?? WORLD_PACKAGE_STILLNESS).trim(),
+            (s.contractsApiBase ?? CONTRACTS_API_STILLNESS).trim(),
+            (s.storageApiBase ?? CONTRACTS_API_STILLNESS).trim()
+          )
+        );
       });
     }
   }, [isOpen]);
 
   const handleSave = () => {
+    const preset = applyEnvironmentPreset(backendEnvironment);
     window.efOverlay?.settings?.set({
       gameLogDir: gameLogDir || undefined,
       skipLogPrompt: skipLogPrompt || undefined,
-      efGraphqlUrl: efGraphqlUrl.trim() || undefined,
-      efWorldApiBaseUrl: efWorldApiBaseUrl.trim() || undefined,
+      worldContractsPackageId: preset.worldContractsPackageId,
+      contractsApiBase: preset.contractsApiBase,
+      storageApiBase: preset.storageApiBase,
     });
-    window.dispatchEvent(new Event("powerlay:settings-saved"));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -135,90 +178,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </section>
 
         <section className={sectionCls}>
-          <h3 className="text-sm font-semibold text-text mb-2">Contracts &amp; tribe</h3>
+          <h3 className="text-sm font-semibold text-text mb-2">Server</h3>
           <p className="text-xs text-muted mb-2">
-            To show <strong className="text-text">tribe</strong> and <strong className="text-text">alliance</strong> contracts in search, this app looks up your tribe using your wallet and a{" "}
-            <strong className="text-text">Sui GraphQL</strong> endpoint. The default is Sui testnet; if your game data lives elsewhere, enter the GraphQL URL your team or docs provide. Your tribe
-            <strong className="text-text"> display name</strong> is loaded from the EVE Frontier <strong className="text-text">World API</strong> (<code className="text-[0.65rem]">GET /v2/tribes/{"{id}"}</code>
-            ) when possible.
+            Choose which Powerlay deployment the desktop app should use.
           </p>
-          <label className="text-muted text-xs block mb-1">Sui GraphQL URL (optional override)</label>
-          <input
-            type="url"
-            className="w-full px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm mb-2"
-            value={efGraphqlUrl}
-            onChange={(e) => setEfGraphqlUrl(e.target.value)}
-            placeholder={DEFAULT_EF_GRAPHQL_URL}
-            spellCheck={false}
-            autoComplete="off"
-          />
-          <p className="text-xs text-muted mb-2">
-            Leave empty to use the built-in default (<code className="px-1 rounded bg-border-input/80 text-[0.65rem] break-all">{DEFAULT_EF_GRAPHQL_URL}</code>
-            ), unless <code className="px-1 rounded bg-border-input/80 text-[0.65rem]">POWERLAY_EF_GRAPHQL_URL</code> is set in the environment.
-          </p>
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="space-y-2">
+            <label className="text-muted text-xs block">Target server</label>
+            <select
+              className="w-full px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm"
+              value={backendEnvironment}
+              onChange={(e) => setBackendEnvironment(e.target.value as BackendEnvironment)}
+            >
+              <option value="stillness">Stillness</option>
+              <option value="utopia">Utopia</option>
+            </select>
             <button
               type="button"
               className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"
-              onClick={async () => {
-                setEfGraphqlUrl("");
-                const cur = await window.efOverlay?.settings?.get();
-                if (cur && window.efOverlay?.settings?.set) {
-                  await window.efOverlay.settings.set({ ...cur, efGraphqlUrl: undefined });
-                  window.dispatchEvent(new Event("powerlay:settings-saved"));
-                }
-              }}
+              onClick={handleSave}
             >
-              Use default GraphQL
-            </button>
-            <button type="button" className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface" onClick={handleSave}>
               {saved ? "Saved" : "Save"}
             </button>
           </div>
-          <label className="text-muted text-xs block mb-1 mt-3">World API base URL (optional override)</label>
-          <input
-            type="url"
-            className="w-full px-2 py-1.5 rounded-md border border-border-input bg-bg text-text text-sm mb-2"
-            value={efWorldApiBaseUrl}
-            onChange={(e) => setEfWorldApiBaseUrl(e.target.value)}
-            placeholder={DEFAULT_EF_WORLD_API_BASE_URL}
-            spellCheck={false}
-            autoComplete="off"
-          />
-          <p className="text-xs text-muted mb-2">
-            No trailing slash. Leave empty for Stillness default (
-            <code className="px-1 rounded bg-border-input/80 text-[0.65rem] break-all">{DEFAULT_EF_WORLD_API_BASE_URL}</code>
-            ) or set <code className="px-1 rounded bg-border-input/80 text-[0.65rem]">POWERLAY_EF_WORLD_API_BASE</code> (e.g. your dev gateway). Docs:{" "}
-            <a
-              className="text-selection-text underline-offset-2 hover:underline"
-              href="https://world-api-stillness.live.tech.evefrontier.com/docs/index.html"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Swagger UI
-            </a>
-            . Disable name lookup: <code className="px-1 rounded bg-border-input/80 text-[0.65rem]">POWERLAY_EF_WORLD_API_DISABLE=true</code>.
-          </p>
-          <div className="flex flex-wrap gap-2 items-center">
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"
-              onClick={async () => {
-                setEfWorldApiBaseUrl("");
-                const cur = await window.efOverlay?.settings?.get();
-                if (cur && window.efOverlay?.settings?.set) {
-                  await window.efOverlay.settings.set({ ...cur, efWorldApiBaseUrl: undefined });
-                  window.dispatchEvent(new Event("powerlay:settings-saved"));
-                }
-              }}
-            >
-              Use default World API
-            </button>
-            <button type="button" className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface" onClick={handleSave}>
-              {saved ? "Saved" : "Save"}
-            </button>
-          </div>
-          <p className="text-xs text-muted mt-2">After changing this, tribe access refreshes automatically. You may need to open the Contracts tab again.</p>
         </section>
 
         <section className={sectionCls}>

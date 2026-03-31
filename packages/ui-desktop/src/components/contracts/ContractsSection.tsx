@@ -4,12 +4,15 @@ import { useContractsAccess } from "../../context/ContractsAccessContext";
 import type { GameData } from "../../preload";
 import { getContractsClient, type ContractsBackendStatus } from "../../services/contracts/contractsClient";
 import { formatWithThousandsSeparator } from "../../utils/format";
+import { DemoModal } from "../DemoModal";
+import { ConnectStorageModal } from "../storage/ConnectStorageModal";
 import { OverlayWithLock } from "../OverlayWithLock";
 import { CreateContractForm } from "./CreateContractForm";
 import { FindContractsPanel } from "./FindContractsPanel";
+import { LeaderboardPanel } from "./LeaderboardPanel";
 import { MyContractsPanel } from "./MyContractsPanel";
 
-type Subview = "find" | "create" | "manage";
+type Subview = "find" | "create" | "manage" | "leaderboard";
 
 const sectionCls = "bg-surface rounded-lg px-5 py-4 border border-border";
 const btnCls = "cursor-pointer px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface";
@@ -20,7 +23,6 @@ const subTabCls = (on: boolean) =>
 
 function contractsModeBadge(s: ContractsBackendStatus | null): string {
   if (!s) return "Checking…";
-  if (s.mode === "mock") return "Mock store";
   return s.connected ? "Powerlay API" : "Powerlay API (offline)";
 }
 
@@ -32,6 +34,7 @@ export function ContractsSection() {
   const [balance, setBalance] = useState<{ balance: number; reserved: number; available: number } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [stats, setStats] = useState<{ totalPublished: number; openForDelivery: number; totalTokensCommitted: number } | null>(null);
+  const [connectStorageOpen, setConnectStorageOpen] = useState(false);
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [backendStatus, setBackendStatus] = useState<ContractsBackendStatus | null>(null);
 
@@ -127,8 +130,24 @@ export function ContractsSection() {
           <button type="button" className={btnCls} onClick={openStats}>
             Statistics
           </button>
+          <button
+            type="button"
+            className={btnCls}
+            disabled={!session?.walletAddress}
+            title={!session?.walletAddress ? "Connect your wallet in the header to use storage." : undefined}
+            onClick={() => setConnectStorageOpen(true)}
+          >
+            Connect storage
+          </button>
           <OverlayWithLock frame="contracts" btnCls={btnCls} />
         </div>
+      </div>
+
+      <div
+        className="mb-4 rounded-md border border-border/60 bg-border/15 px-3 py-2.5 text-xs text-muted leading-relaxed"
+        role="note"
+      >
+        <strong className="text-text">If something breaks after a game or network update:</strong> tribe and search rely on CCP&apos;s Sui GraphQL, on-chain object layout, and Frontier World API URLs. When those change, features here can fail until we ship an update — please report it as a known class of issue.
       </div>
 
       {session?.walletAddress && (status === "unavailable" || status === "error") && (
@@ -140,7 +159,7 @@ export function ContractsSection() {
           <p className="m-0 font-medium text-amber-200">Tribe not available</p>
           <p className="m-0 mt-1 text-xs text-muted leading-relaxed">
             {errorMessage ??
-              "Only public contracts are shown in search until your tribe can be resolved. Check Settings → Contracts & tribe (Sui GraphQL URL) or sign in with the wallet linked to your character."}
+              "Only public contracts are shown in search until your tribe can be resolved. Sign in with the wallet linked to your Frontier character, or report the issue if it started after a game or infrastructure update."}
           </p>
         </div>
       )}
@@ -168,10 +187,14 @@ export function ContractsSection() {
         <button type="button" className={subTabCls(subview === "manage")} onClick={() => setSubview("manage")}>
           My contracts
         </button>
+        <button type="button" className={subTabCls(subview === "leaderboard")} onClick={() => setSubview("leaderboard")}>
+          Leaderboard
+        </button>
       </div>
 
       {subview === "find" && <FindContractsPanel client={client} onRefreshBalance={refreshBalance} />}
       {subview === "manage" && <MyContractsPanel client={client} onRefreshBalance={refreshBalance} />}
+      {subview === "leaderboard" && <LeaderboardPanel />}
       {subview === "create" && (
         <CreateContractForm
           client={client}
@@ -181,40 +204,32 @@ export function ContractsSection() {
             setSubview("find");
           }}
           onDraftsChanged={refreshBalance}
+          onOpenConnectStorage={() => setConnectStorageOpen(true)}
         />
       )}
 
       {statsOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="contracts-stats-title"
-        >
-          <div className="bg-surface border border-border rounded-lg max-w-md w-full p-4 shadow-xl">
-            <h3 id="contracts-stats-title" className="m-0 text-sm font-semibold text-text mb-3">
-              Contract statistics
-            </h3>
-            {stats ? (
-              <ul className="list-none m-0 p-0 text-sm space-y-2 text-muted">
-                <li>
-                  Published contracts: <span className="text-text">{stats.totalPublished}</span>
-                </li>
-                <li>
-                  Open for delivery: <span className="text-text">{stats.openForDelivery}</span>
-                </li>
-                <li>
-                  Tokens committed (mock): <span className="text-text">{formatWithThousandsSeparator(Math.round(stats.totalTokensCommitted))}</span>
-                </li>
-              </ul>
-            ) : (
-              <p className="text-sm text-muted m-0">Loading…</p>
-            )}
-            <button type="button" className={`${btnCls} mt-4`} onClick={() => setStatsOpen(false)}>
-              Close
-            </button>
-          </div>
-        </div>
+        <DemoModal title="Contract statistics" titleId="contracts-stats-title" onClose={() => setStatsOpen(false)}>
+          {stats ? (
+            <ul className="list-none m-0 p-0 text-sm space-y-2 text-muted">
+              <li>
+                Published contracts: <span className="text-text">{stats.totalPublished}</span>
+              </li>
+              <li>
+                Open for delivery: <span className="text-text">{stats.openForDelivery}</span>
+              </li>
+              <li>
+                Tokens committed (mock): <span className="text-text">{formatWithThousandsSeparator(Math.round(stats.totalTokensCommitted))}</span>
+              </li>
+            </ul>
+          ) : (
+            <p className="text-sm text-muted m-0">Loading…</p>
+          )}
+        </DemoModal>
+      )}
+
+      {connectStorageOpen && (
+        <ConnectStorageModal onClose={() => setConnectStorageOpen(false)} />
       )}
     </section>
   );

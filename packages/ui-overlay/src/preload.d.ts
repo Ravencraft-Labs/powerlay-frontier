@@ -41,10 +41,7 @@ export interface EFOverlayAPI {
     stats: () => Promise<ContractStats>;
     cancel: (contractId: string) => Promise<LogisticsContract | null>;
     completeContract: (contractId: string) => Promise<LogisticsContract | null>;
-    getBackendStatus: () => Promise<
-      | { mode: "mock"; connected: true }
-      | { mode: "http"; connected: boolean; message?: string; apiBase: string }
-    >;
+    getBackendStatus: () => Promise<{ mode: "http"; connected: boolean; message?: string; apiBase: string }>;
   };
   tribeTodo?: {
     list: () => Promise<TribeTodo[]>;

@@ -11,6 +11,13 @@ import type {
   SearchContractsParams,
   UpdateDraftInput,
 } from "@powerlay/core";
+import type {
+  ContractLogEntry,
+  RecordDeliveryBody,
+  SignDeliveryTxParams,
+  SubmitDepositAttemptBody,
+  SubmitDepositAttemptResult,
+} from "../../preload";
 
 export interface TokenBalanceView {
   balance: number;
@@ -18,9 +25,12 @@ export interface TokenBalanceView {
   available: number;
 }
 
-export type ContractsBackendStatus =
-  | { mode: "mock"; connected: true }
-  | { mode: "http"; connected: boolean; message?: string; apiBase: string };
+export type ContractsBackendStatus = {
+  mode: "http";
+  connected: boolean;
+  message?: string;
+  apiBase: string;
+};
 
 export interface ContractsClient {
   search(params: SearchContractsParams): Promise<ContractBrowseSummary[]>;
@@ -40,6 +50,14 @@ export interface ContractsClient {
   completeContract(contractId: string): Promise<LogisticsContract | null>;
   /** HTTP mode: checks TCP reachability to the contracts API. Mock mode: always connected. */
   getBackendStatus(): Promise<ContractsBackendStatus>;
+  /** Returns a unified timeline of events for a contract (creator-only). */
+  getLogs(contractId: string): Promise<ContractLogEntry[]>;
+  /** Opens browser sign-tx page; builds `deliver_personal_to_owner_primary` PTB. */
+  signDeliveryTx(params: SignDeliveryTxParams): Promise<{ digest: string } | { error: string }>;
+  /** POST delivery after chain tx — server verifies digest and updates balances / line progress. */
+  recordDelivery(contractId: string, body: RecordDeliveryBody): Promise<LogisticsContract>;
+  /** POST async deposit-attempt after tx digest is available. */
+  submitDepositAttempt(contractId: string, body: SubmitDepositAttemptBody): Promise<SubmitDepositAttemptResult>;
 }
 
 export function getContractsClient(): ContractsClient | null {
