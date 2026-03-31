@@ -10,6 +10,12 @@ import type {
   PublishContractResult,
   SearchContractsParams,
   UpdateDraftInput,
+  ScoutEntry,
+  CreateScoutEntryInput,
+  UpdateScoutEntryInput,
+  ScoutSettings,
+  ScoutVisibility,
+  ScoutActivityEvent,
 } from "@powerlay/core";
 
 export interface SignDeliveryTxParams {
@@ -115,7 +121,7 @@ export interface GameData {
   errors?: GameDataErrors;
 }
 
-export type OverlayShellFrame = "contracts" | "builder";
+export type OverlayShellFrame = "contracts" | "builder" | "scout";
 
 export interface EFOverlayAPI {
   contracts?: {
@@ -163,6 +169,7 @@ export interface EFOverlayAPI {
     toggle: (frame: OverlayShellFrame) => Promise<void>;
     toggleBuilder: (buildId: string) => Promise<void>;
     getVisibleBuilderIds: () => Promise<string[]>;
+    getVisible?: (frame: OverlayShellFrame) => Promise<boolean>;
     show: (frame: OverlayShellFrame) => Promise<void>;
     hide: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;
     hideBuilder?: (buildId: string) => Promise<void>;
@@ -225,6 +232,22 @@ export interface EFOverlayAPI {
   };
   tribe?: {
     resolve: () => Promise<{ ok: boolean; tribeId?: string; tribeName?: string; error?: string }>;
+  };
+  scout?: {
+    getCurrentSystem: () => Promise<string | null>;
+    getActiveSystem: () => Promise<string | null>;
+    setSystemOverride: (system: string | null) => Promise<ScoutSettings>;
+    getError: () => Promise<string | null>;
+    list: () => Promise<ScoutEntry[]>;
+    get: (id: string) => Promise<ScoutEntry | null>;
+    create: (input: CreateScoutEntryInput) => Promise<ScoutEntry>;
+    update: (id: string, patch: UpdateScoutEntryInput) => Promise<ScoutEntry | null>;
+    delete: (id: string) => Promise<boolean>;
+    getSettings: () => Promise<ScoutSettings>;
+    updateSettings: (patch: Partial<ScoutSettings>) => Promise<ScoutSettings>;
+    startWatching: () => Promise<void>;
+    stopWatching: () => Promise<void>;
+    getActivityLog: (limit?: number) => Promise<ScoutActivityEvent[]>;
   };
   getIconsBaseUrl?: () => Promise<string>;
 }

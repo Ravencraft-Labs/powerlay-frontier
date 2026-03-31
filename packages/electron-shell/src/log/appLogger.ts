@@ -62,6 +62,14 @@ function write(level: LogLevel, message: string, data?: unknown): void {
       ...(data != null && data !== undefined ? { data } : {}),
     };
     fs.appendFileSync(file, JSON.stringify(entry) + "\n", "utf-8");
+    if (!app.isPackaged) {
+      const tag = `[app:${level}]`;
+      if (data != null) {
+        console.log(tag, message, data);
+      } else {
+        console.log(tag, message);
+      }
+    }
   } catch {
     // Silently fail - avoid crashing on log write errors
   }

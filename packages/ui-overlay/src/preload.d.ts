@@ -7,6 +7,10 @@ import type {
   SearchContractsParams,
   UpdateDraftInput,
   ContractStats,
+  ScoutEntry,
+  CreateScoutEntryInput,
+  UpdateScoutEntryInput,
+  ScoutSettings,
 } from "@powerlay/core";
 
 export interface MiningOreEntry {
@@ -24,7 +28,7 @@ export interface BuilderOverlayState {
   plannedVolByTypeId?: Record<number, number>;
 }
 
-export type OverlayShellFrame = "contracts" | "builder";
+export type OverlayShellFrame = "contracts" | "builder" | "scout";
 
 export interface EFOverlayAPI {
   contracts?: {
@@ -60,11 +64,27 @@ export interface EFOverlayAPI {
     hide?: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;
     hideBuilder: (buildId: string) => Promise<void>;
     getLockState?: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
+    getVisible?: (frame: OverlayShellFrame) => Promise<boolean>;
   };
   mining?: {
     getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null }>;
     startTracking: (opts?: { buildId?: string; plannedVolByTypeId?: Record<number, number> }) => Promise<void>;
     stopTracking: () => Promise<void>;
+  };
+  scout?: {
+    getCurrentSystem: () => Promise<string | null>;
+    getActiveSystem: () => Promise<string | null>;
+    setSystemOverride: (system: string | null) => Promise<ScoutSettings>;
+    getError: () => Promise<string | null>;
+    list: () => Promise<ScoutEntry[]>;
+    get: (id: string) => Promise<ScoutEntry | null>;
+    create: (input: CreateScoutEntryInput) => Promise<ScoutEntry>;
+    update: (id: string, patch: UpdateScoutEntryInput) => Promise<ScoutEntry | null>;
+    delete: (id: string) => Promise<boolean>;
+    getSettings: () => Promise<ScoutSettings>;
+    updateSettings: (patch: Partial<ScoutSettings>) => Promise<ScoutSettings>;
+    startWatching: () => Promise<void>;
+    stopWatching: () => Promise<void>;
   };
 }
 
