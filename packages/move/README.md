@@ -22,7 +22,7 @@ Two deployed environments:
 | **PackageID** | `0x282d2e684833f090a2cb8e2c51e250c837ecc559f2844cc190d48760c7617fd4` |
 | **UpgradeCap** | `0x8afe183af493afe930457525c1829968033ef4196a2ecd445f42630eb428172d` |
 
-> **UpgradeCap** — объект, дающий право делать `upgrade` пакета. Держите его в безопасности.
+> **UpgradeCap** — the object that grants the right to upgrade the package. The object ID is public; what matters is which wallet owns it — don't lose control of that wallet, and ideally transfer it to a multisig address (see below).
 > Stillness: not yet deployed.
 
 ### Build
@@ -46,13 +46,13 @@ cd packages/move/powerlay-tribe-stash
 sui client publish --build-env testnet_utopia --gas-budget 100000000
 ```
 
-Из вывода сохрани:
-- `PackageID` — адрес пакета
-- `ObjectType: 0x2::package::UpgradeCap` → его `ObjectID` — это UpgradeCap
+From the output, save:
+- `PackageID` — the package address
+- `ObjectType: 0x2::package::UpgradeCap` → its `ObjectID` — this is the UpgradeCap
 
-### Передать UpgradeCap на мультиключ-адрес
+### Transfer UpgradeCap to a multisig address
 
-После публикации UpgradeCap принадлежит твоему личному кошельку. Переведи его на мультиключ чтобы команда контролировала апгрейды:
+After publishing, the UpgradeCap belongs to your personal wallet. Transfer it to the multisig address so the team controls upgrades:
 
 ```bash
 sui client transfer \
@@ -61,7 +61,7 @@ sui client transfer \
   --gas-budget 10000000
 ```
 
-После этого апгрейды требуют подписи от мультиключ-адреса (см. раздел **Upgrade from multisig** ниже).
+After this, upgrades require a signature from the multisig address (see **Upgrade from multisig** section below).
 
 ### Upgrade
 
@@ -70,7 +70,7 @@ cd packages/move/powerlay-tribe-stash
 sui client upgrade --build-env testnet_utopia --gas-budget 100000000
 ```
 
-Если UpgradeCap уже на мультиключе — добавь `--sender <multisig-address>` и используй multisig upgrade flow из секции ниже.
+If the UpgradeCap is already on a multisig address — add `--sender <multisig-address>` and use the multisig upgrade flow from the section below.
 
 ---
 
