@@ -78,6 +78,9 @@ sui client upgrade --build-env testnet_utopia
 sui client upgrade --build-env testnet_stillness
 ```
 
+> **Note:** If the UpgradeCap was transferred to a multisig address, the commands above will fail.
+> You must add `--sender <multisig-address>` and follow the multisig upgrade flow in the section below.
+
 After upgrading, commit the updated `Published.toml` (version will increment).
 
 ---
@@ -99,10 +102,19 @@ Copy the `suiPublicKey` value (starts with `suipubkey...`) for each person.
 
 ### Step 2 — create the multisig address
 
+**bash/macOS/Linux:**
 ```bash
 sui keytool multi-sig-address \
   --pks <pubkey-1> <pubkey-2> \
   --weights 1 1 \
+  --threshold 1
+```
+
+**PowerShell (Windows):**
+```powershell
+sui keytool multi-sig-address `
+  --pks <pubkey-1> <pubkey-2> `
+  --weights 1 1 `
   --threshold 1
 ```
 
@@ -122,11 +134,19 @@ testnet_utopia:    0xe8a097337e52b8ad897d09803dd4954ee4c910639059eeb71e28a17fa6d
 testnet_stillness: 0xb5c0b6f419cde569823a0fa1c5dbc1c6ec4d60cb03d2d1c3752af812c7df6e36
 ```
 
+**bash/macOS/Linux:**
 ```bash
-# Run once per environment
 sui client transfer \
   --to <multisig-address> \
   --object-id <upgrade-cap-id> \
+  --gas-budget 10000000
+```
+
+**PowerShell (Windows):**
+```powershell
+sui client transfer `
+  --to <multisig-address> `
+  --object-id <upgrade-cap-id> `
   --gas-budget 10000000
 ```
 
@@ -136,15 +156,15 @@ After this, the UpgradeCap is owned by the multisig address — no single wallet
 
 When upgrading, each signer builds the tx locally and combines signatures:
 
+**bash/macOS/Linux:**
 ```bash
-# 1. Each signer serializes the upgrade tx (do not execute yet)
+# 1. Serialize the upgrade tx (do not execute yet)
 sui client upgrade --build-env testnet_utopia \
   --sender <multisig-address> \
   --serialize-unsigned-transaction > tx.b64
 
 # 2. Each signer signs with their own key
 sui keytool sign --address <your-address> --data $(cat tx.b64)
-# Outputs a signature string
 
 # 3. Combine signatures and execute
 sui keytool multi-sig-combine-partial-sig \
@@ -153,11 +173,33 @@ sui keytool multi-sig-combine-partial-sig \
   --threshold 1 \
   --sigs <sig-1> <sig-2> \
   --tx-bytes $(cat tx.b64)
-# Outputs combined-sig.b64
 
 sui client execute-signed-tx \
   --tx-bytes $(cat tx.b64) \
   --signatures $(cat combined-sig.b64)
+```
+
+**PowerShell (Windows):**
+```powershell
+# 1. Serialize the upgrade tx (do not execute yet)
+sui client upgrade --build-env testnet_utopia `
+  --sender <multisig-address> `
+  --serialize-unsigned-transaction | Out-File tx.b64
+
+# 2. Each signer signs with their own key
+sui keytool sign --address <your-address> --data (Get-Content tx.b64)
+
+# 3. Combine signatures and execute
+sui keytool multi-sig-combine-partial-sig `
+  --pks <pubkey-1> <pubkey-2> `
+  --weights 1 1 `
+  --threshold 1 `
+  --sigs <sig-1> <sig-2> `
+  --tx-bytes (Get-Content tx.b64) | Out-File combined-sig.b64
+
+sui client execute-signed-tx `
+  --tx-bytes (Get-Content tx.b64) `
+  --signatures (Get-Content combined-sig.b64)
 ```
 
 If threshold is 1, only one person needs to sign — steps 2–3 can be done by a single member.
