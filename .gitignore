@@ -39,3 +39,9 @@ release/
 /*.sh
 
 CLAUDE.md
+
+# test files
+_*
+
+# sui tmp files
+publish_tx.txt

@@ -1,0 +1,12 @@
+[package]
+name = "powerlay_tribe_stash"
+edition = "2024.beta"
+
+[dependencies]
+world = { git = "https://github.com/evefrontier/world-contracts", subdir = "contracts/world", rev = "main" }
+
+# New-style package (Sui 1.63+): do NOT add [addresses] here.
+# 4c78adac = Sui testnet chain-id prefix.
+[environments]
+testnet_utopia    = "4c78adac"
+testnet_stillness = "4c78adac"

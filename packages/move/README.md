@@ -1,6 +1,11 @@
 # Move Smart Contracts
 
-Sui Move package for Powerlay Frontier on EVE Frontier (Sui testnet).
+Sui Move packages for Powerlay Frontier on EVE Frontier (Sui testnet).
+
+| Package | Description |
+|---|---|
+| `powerlay-storage` | Shared tribe SSU storage extension |
+| `powerlay-tribe-stash` | Named clan stash with RBAC, encrypted location, and atomic drain |
 
 Two deployed environments:
 - **testnet_utopia** — Utopia world
@@ -8,7 +13,70 @@ Two deployed environments:
 
 ---
 
-## View latest deployed contract on-chain
+## powerlay-tribe-stash
+
+### Deployed addresses (testnet_utopia)
+
+| | ID |
+|---|---|
+| **PackageID** | `0x282d2e684833f090a2cb8e2c51e250c837ecc559f2844cc190d48760c7617fd4` |
+| **UpgradeCap** | `0x8afe183af493afe930457525c1829968033ef4196a2ecd445f42630eb428172d` |
+
+> **UpgradeCap** — объект, дающий право делать `upgrade` пакета. Держите его в безопасности.
+> Stillness: not yet deployed.
+
+### Build
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui move build --build-env testnet_utopia
+```
+
+### Test
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui move test
+```
+
+### Publish (first deploy)
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui client publish --build-env testnet_utopia --gas-budget 100000000
+```
+
+Из вывода сохрани:
+- `PackageID` — адрес пакета
+- `ObjectType: 0x2::package::UpgradeCap` → его `ObjectID` — это UpgradeCap
+
+### Передать UpgradeCap на мультиключ-адрес
+
+После публикации UpgradeCap принадлежит твоему личному кошельку. Переведи его на мультиключ чтобы команда контролировала апгрейды:
+
+```bash
+sui client transfer \
+  --to <MULTISIG_ADDR> \
+  --object-id 0x8afe183af493afe930457525c1829968033ef4196a2ecd445f42630eb428172d \
+  --gas-budget 10000000
+```
+
+После этого апгрейды требуют подписи от мультиключ-адреса (см. раздел **Upgrade from multisig** ниже).
+
+### Upgrade
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui client upgrade --build-env testnet_utopia --gas-budget 100000000
+```
+
+Если UpgradeCap уже на мультиключе — добавь `--sender <multisig-address>` и используй multisig upgrade flow из секции ниже.
+
+---
+
+## powerlay-storage
+
+#### View latest deployed contract on-chain
 
 ```bash
 # View package object (replace <ENV> with testnet_utopia or testnet_stillness)
