@@ -6,6 +6,9 @@ node_modules.zip
 dist/
 *.tsbuildinfo
 
+# Move build output
+packages/move/**/build/
+
 # Raw game data (large; keep local)
 data/
 
