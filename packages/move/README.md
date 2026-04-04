@@ -1,6 +1,11 @@
 # Move Smart Contracts
 
-Sui Move package for Powerlay Frontier on EVE Frontier (Sui testnet).
+Sui Move packages for Powerlay Frontier on EVE Frontier (Sui testnet).
+
+| Package | Description |
+|---|---|
+| `powerlay-storage` | Shared tribe SSU storage extension |
+| `powerlay-tribe-stash` | Named clan stash with RBAC, encrypted location, and atomic drain |
 
 Two deployed environments:
 - **testnet_utopia** — Utopia world
@@ -8,7 +13,70 @@ Two deployed environments:
 
 ---
 
-## View latest deployed contract on-chain
+## powerlay-tribe-stash
+
+### Deployed addresses (testnet_utopia)
+
+| | ID |
+|---|---|
+| **PackageID** | `0x282d2e684833f090a2cb8e2c51e250c837ecc559f2844cc190d48760c7617fd4` |
+| **UpgradeCap** | `0x8afe183af493afe930457525c1829968033ef4196a2ecd445f42630eb428172d` |
+
+> **UpgradeCap** — the object that grants the right to upgrade the package. The object ID is public; what matters is which wallet owns it — don't lose control of that wallet, and ideally transfer it to a multisig address (see below).
+> Stillness: not yet deployed.
+
+### Build
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui move build --build-env testnet_utopia
+```
+
+### Test
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui move test
+```
+
+### Publish (first deploy)
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui client publish --build-env testnet_utopia --gas-budget 100000000
+```
+
+From the output, save:
+- `PackageID` — the package address
+- `ObjectType: 0x2::package::UpgradeCap` → its `ObjectID` — this is the UpgradeCap
+
+### Transfer UpgradeCap to a multisig address
+
+After publishing, the UpgradeCap belongs to your personal wallet. Transfer it to the multisig address so the team controls upgrades:
+
+```bash
+sui client transfer \
+  --to <MULTISIG_ADDR> \
+  --object-id 0x8afe183af493afe930457525c1829968033ef4196a2ecd445f42630eb428172d \
+  --gas-budget 10000000
+```
+
+After this, upgrades require a signature from the multisig address (see **Upgrade from multisig** section below).
+
+### Upgrade
+
+```bash
+cd packages/move/powerlay-tribe-stash
+sui client upgrade --build-env testnet_utopia --gas-budget 100000000
+```
+
+If the UpgradeCap is already on a multisig address — add `--sender <multisig-address>` and use the multisig upgrade flow from the section below.
+
+---
+
+## powerlay-storage
+
+#### View latest deployed contract on-chain
 
 ```bash
 # View package object (replace <ENV> with testnet_utopia or testnet_stillness)
