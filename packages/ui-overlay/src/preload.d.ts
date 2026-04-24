@@ -31,6 +31,9 @@ export interface BuilderOverlayState {
 export type OverlayShellFrame = "contracts" | "builder" | "scout";
 
 export interface EFOverlayAPI {
+  settings?: {
+    get: () => Promise<{ overlayOpacity?: number }>;
+  };
   contracts?: {
     search: (params: SearchContractsParams) => Promise<ContractBrowseSummary[]>;
     listMyContracts: (bucket?: string) => Promise<ContractBrowseSummary[]>;

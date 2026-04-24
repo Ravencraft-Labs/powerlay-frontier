@@ -200,6 +200,7 @@ export interface EFOverlayAPI {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
     }>;
     set: (settings: {
       gameLogDir?: string;
@@ -207,6 +208,7 @@ export interface EFOverlayAPI {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
     }) => Promise<void>;
   };
   app?: {
