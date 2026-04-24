@@ -12,7 +12,7 @@ function getIconsBaseUrlOnce(): Promise<string> {
   return iconsBaseUrlPromise;
 }
 
-function useIconsBaseUrl(): string {
+export function useIconsBaseUrl(): string {
   const [baseUrl, setBaseUrl] = useState("");
   useEffect(() => {
     getIconsBaseUrlOnce().then(setBaseUrl);
