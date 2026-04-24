@@ -30,6 +30,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.envrc
 
 # Electron
 out/
@@ -39,3 +40,4 @@ release/
 /*.sh
 
 CLAUDE.md
+tasks.md

@@ -871,6 +871,7 @@ function MiningTrackingSubFrame({
   inputNumCls,
   btnCls,
   formatCompactNumber,
+  shortenNumbers = true,
   overlayVisible = false,
   onToggleOverlay,
 }: {
@@ -891,9 +892,11 @@ function MiningTrackingSubFrame({
   inputNumCls: string;
   btnCls: string;
   formatCompactNumber: (n: number) => string;
+  shortenNumbers?: boolean;
   overlayVisible?: boolean;
   onToggleOverlay?: () => void;
 }) {
+  const fmt = (n: number) => shortenNumbers ? formatCompactNumber(n) : formatWithThousandsSeparator(n);
   const [fillAllChecked, setFillAllChecked] = useState(false);
   const [snapshotBeforeFillAll, setSnapshotBeforeFillAll] = useState<Record<number, number> | null>(null);
   const [filledOres, setFilledOres] = useState<Set<number>>(() => new Set());
@@ -1140,7 +1143,7 @@ function MiningTrackingSubFrame({
                   />
                 </div>
                 <span className="text-xs text-muted shrink-0 flex items-center gap-1">
-                  {formatCompactNumber(minedVol)} / {formatCompactNumber(neededVol)} m³
+                  {fmt(minedVol)} / {fmt(neededVol)} m³
                   <button
                     type="button"
                     className="p-0.5 rounded hover:bg-border text-muted hover:text-text transition-colors"
@@ -1172,7 +1175,7 @@ function MiningTrackingSubFrame({
       )}
       {totalOre > 0 ? (
         <p className="text-xs text-muted">
-          {formatCompactNumber(totalMined)} m³ total / {formatCompactNumber(Math.max(0, totalOre - totalMined))} m³ left
+          {fmt(totalMined)} m³ total / {fmt(Math.max(0, totalOre - totalMined))} m³ left
         </p>
       ) : (
         <p className="text-xs text-muted">Add planned items to see ore progress.</p>
@@ -1522,7 +1525,27 @@ export function BuildPage({
   return (
     <div className="flex flex-col gap-4">
       <div className={sectionCls}>
-        <h3 className={headingCls}>Tracking</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="m-0 text-[0.9rem] font-semibold text-text">Tracking</h3>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-text flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={shortenNumbers}
+                onChange={(e) => setShortenNumbers(e.target.checked)}
+                className="rounded border-border"
+              />
+              Shorten numbers
+            </label>
+            <button
+              type="button"
+              className="cursor-pointer px-3 py-1.5 rounded-md border border-destructive/50 bg-destructive/10 text-destructive text-sm hover:bg-destructive/20"
+              onClick={() => onDelete(local.id)}
+            >
+              Delete build
+            </button>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-4 items-end mb-4">
           <div className="flex-1 min-w-[200px]">
             <label className="text-muted text-xs block mb-1">Star system</label>
@@ -1552,6 +1575,7 @@ export function BuildPage({
             inputNumCls={inputNumCls}
             btnCls={btnCls}
             formatCompactNumber={formatCompactNumber}
+            shortenNumbers={shortenNumbers}
             overlayVisible={overlayVisible}
             onToggleOverlay={onToggleOverlay}
           />
@@ -1924,30 +1948,6 @@ export function BuildPage({
         ))}
       </div>
 
-      <div className={sectionCls}>
-        <h3 className={headingCls}>Options</h3>
-        <div className={rowCls}>
-          <label className="text-sm text-text flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={shortenNumbers}
-              onChange={(e) => setShortenNumbers(e.target.checked)}
-              className="rounded border-border"
-            />
-            Shorten numbers
-          </label>
-        </div>
-      </div>
-
-      <div className={sectionCls}>
-        <button
-          type="button"
-          className="cursor-pointer px-3 py-1.5 rounded-md border border-destructive/50 bg-destructive/10 text-destructive text-sm hover:bg-destructive/20"
-          onClick={() => onDelete(local.id)}
-        >
-          Delete build
-        </button>
-      </div>
     </div>
   );
 }
