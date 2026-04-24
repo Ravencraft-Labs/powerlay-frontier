@@ -1441,18 +1441,8 @@ export function BuildPage({
   }, [gameData?.facilityTypeNames, local.facilities]);
 
   const addPlannedItem = () => {
-    if (gameData?.types && gameData?.blueprints) {
-      const producible = getProducibleTypeIds(gameData.types, gameData.blueprints);
-      const first = producible[0];
-      if (first) {
-        update({
-          plannedItems: [...local.plannedItems, { typeID: first.typeID, quantity: 1 }],
-        });
-        return;
-      }
-    }
     update({
-      plannedItems: [...local.plannedItems, { itemId: PRODUCIBLE_ITEMS[0], quantity: 1 }],
+      plannedItems: [...local.plannedItems, { quantity: 1 }],
     });
   };
   const updatePlannedItem = (idx: number, p: PlannedItem) => {
