@@ -29,7 +29,7 @@ import {
 } from "@powerlay/core";
 import type { GameData } from "../preload";
 import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime, parseCompactNumber, parseGamePaste } from "../utils/format";
-import { ItemIcon } from "./ItemIcon";
+import { ItemIcon, useIconsBaseUrl } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
 
 const DEBOUNCE_MS = 500;
@@ -2124,6 +2124,7 @@ function ItemSearchWithTypes({
     return all.slice(0, MAX_ITEM_SEARCH_RESULTS);
   }, [types, query, producibleTypeIds]);
 
+  const iconsBaseUrl = useIconsBaseUrl();
   const hasTypes = Object.keys(types).length > 0;
 
   const pasteFromClipboard = async () => {
@@ -2158,13 +2159,22 @@ function ItemSearchWithTypes({
             matches.map((m) => (
               <li
                 key={m.typeID}
-                className="py-1.5 px-3 cursor-pointer text-sm hover:bg-border"
+                className="py-1.5 px-3 cursor-pointer text-sm hover:bg-border flex items-center gap-2"
                 onMouseDown={() => {
                   onChange(m.typeID);
                   setQuery(m.name);
                   setOpen(false);
                 }}
               >
+                {iconsBaseUrl && (
+                  <img
+                    src={`${iconsBaseUrl.replace(/\/?$/, "/")}${m.typeID}.png`}
+                    alt=""
+                    width={20}
+                    height={20}
+                    className="flex-shrink-0"
+                  />
+                )}
                 {m.name}
               </li>
             ))
