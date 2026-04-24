@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld("efOverlay", {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
     }) =>
       ipcRenderer.invoke("settings:set", settings),
   },
