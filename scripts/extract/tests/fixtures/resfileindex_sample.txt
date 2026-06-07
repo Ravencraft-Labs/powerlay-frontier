@@ -1,0 +1,3 @@
+res:/staticdata/types.fsdbinary,ab/ab1234deadbeef.fsdbinary,ab1234deadbeef,0,123456
+res:/staticdata/groups.fsdbinary,cd/cd5678cafebabe.fsdbinary,cd5678cafebabe,0,7890
+res:/localizationfsd/localization_fsd_en-us.pickle,ef/ef90abcdef0011.pickle,ef90abcdef0011,0,222000

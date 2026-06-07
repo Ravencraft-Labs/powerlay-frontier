@@ -6,6 +6,11 @@
   "scripts": {
     "strip-data": "node scripts/strip-data.js",
     "types-name-id": "node scripts/types-name-id.js",
+    "extract:discover": "node scripts/extract/run.mjs discover",
+    "extract:run": "node scripts/extract/run.mjs extract",
+    "extract:validate": "node scripts/extract/run.mjs validate",
+    "extract:promote": "node scripts/extract/run.mjs promote",
+    "update-static-data": "node scripts/extract/run.mjs update_static_data",
     "debug-graphql": "node scripts/debug-ef-graphql.mjs",
     "dev": "concurrently -n d,o,e \"pnpm --filter @powerlay/ui-desktop dev\" \"pnpm --filter @powerlay/ui-overlay dev\" \"wait-on http://localhost:5173 http://localhost:5174 && cross-env DESKTOP_URL=http://localhost:5173 OVERLAY_URL=http://localhost:5174 pnpm --filter @powerlay/electron-shell dev\"",
     "build": "pnpm run -r build",
@@ -18,7 +23,8 @@
     "appId": "com.powerlay.desktop",
     "productName": "Powerlay Frontier",
     "files": [
-      "packages/electron-shell/dist/**"
+      "packages/electron-shell/dist/**",
+      "data/raw/icons/**/*"
     ],
     "extraResources": [
       {
@@ -37,10 +43,12 @@
         "from": "data",
         "to": "data",
         "filter": [
-          "**/*",
-          "!raw/types.json",
-          "!raw/solarsystems.json",
-          "!raw/groups.json"
+          "stripped/types.json",
+          "stripped/structure_recipes.json",
+          "stripped/oreGroupIDs.json",
+          "stripped/solarsystems.json",
+          "raw/industry_blueprints.json",
+          "raw/industry_facilities.json"
         ]
       }
     ],
