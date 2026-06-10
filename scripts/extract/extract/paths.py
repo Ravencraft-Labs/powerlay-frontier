@@ -37,6 +37,10 @@ def candidate_roots(home: Path, platform: Platform, build: Build) -> list[Path]:
         Path("D:/CCP/EVE Frontier") / build,
         Path("C:/Games/EVE Frontier") / build,
         Path(os.environ.get("APPDATA", "C:/")) / "CCP" / "EVE Frontier" / build,
+        # Common install roots where stillness/ sits directly under the game dir
+        Path("D:/EVE Frontier"),
+        Path("C:/EVE Frontier"),
+        Path("D:/Games/EVE Frontier"),
     ]
 
 

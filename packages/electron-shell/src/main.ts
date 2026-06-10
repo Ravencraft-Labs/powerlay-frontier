@@ -12,6 +12,7 @@ import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
 import { registerScoutHandlers } from "./ipc/scoutHandlers.js";
 import { registerStorageHandlers } from "./ipc/storageHandlers.js";
+import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
 import { runTailerTest } from "./log/tailerTest.js";
 import { getAppLogDir } from "./log/appLogger.js";
@@ -376,7 +377,7 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
 }
 
 function registerAppProtocol(): void {
-  const iconsDir = path.join(app.getAppPath(), "data", "raw", "icons");
+  const iconsDir = path.join(getDataRoot(), "data", "raw", "icons");
   protocol.handle("app", (request) => {
     const u = new URL(request.url);
     if (u.hostname !== "icons" || !u.pathname.startsWith("/")) {
