@@ -57,3 +57,4 @@ _*
 # Python dunder files in scripts/extract/ (override the `_*` rule above)
 !scripts/extract/**/__init__.py
 !scripts/extract/**/__main__.py
+!scripts/extract/**/_cfsd.py
