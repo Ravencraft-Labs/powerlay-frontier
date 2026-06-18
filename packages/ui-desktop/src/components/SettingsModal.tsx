@@ -68,6 +68,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [gameLogDir, setGameLogDir] = useState("");
   const [skipLogPrompt, setSkipLogPrompt] = useState(false);
   const [backendEnvironment, setBackendEnvironment] = useState<BackendEnvironment>("stillness");
+  const [overlayOpacity, setOverlayOpacity] = useState(92);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       window.efOverlay.settings.get().then((s) => {
         setGameLogDir(s.gameLogDir ?? "");
         setSkipLogPrompt(s.skipLogPrompt ?? false);
+        setOverlayOpacity(s.overlayOpacity ?? 92);
         setBackendEnvironment(
           environmentPresetFromValues(
             (s.worldContractsPackageId ?? WORLD_PACKAGE_STILLNESS).trim(),
@@ -94,6 +96,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       worldContractsPackageId: preset.worldContractsPackageId,
       contractsApiBase: preset.contractsApiBase,
       storageApiBase: preset.storageApiBase,
+      overlayOpacity,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -192,6 +195,33 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <option value="stillness">Stillness</option>
               <option value="utopia">Utopia</option>
             </select>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"
+              onClick={handleSave}
+            >
+              {saved ? "Saved" : "Save"}
+            </button>
+          </div>
+        </section>
+
+        <section className={sectionCls}>
+          <h3 className="text-sm font-semibold text-text mb-2">Overlay</h3>
+          <p className="text-xs text-muted mb-3">Background opacity of all overlay windows.</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-muted text-xs">Opacity</label>
+              <span className="text-sm text-text tabular-nums">{overlayOpacity}%</span>
+            </div>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              step={5}
+              value={overlayOpacity}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+              className="w-full accent-accent"
+            />
             <button
               type="button"
               className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"

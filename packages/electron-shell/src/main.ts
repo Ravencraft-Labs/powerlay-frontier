@@ -377,8 +377,7 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
 }
 
 function registerAppProtocol(): void {
-  const root = getDataRoot();
-  const iconsDir = path.join(root, "data", "raw", "icons");
+  const iconsDir = path.join(getDataRoot(), "data", "raw", "icons");
   protocol.handle("app", (request) => {
     const u = new URL(request.url);
     if (u.hostname !== "icons" || !u.pathname.startsWith("/")) {

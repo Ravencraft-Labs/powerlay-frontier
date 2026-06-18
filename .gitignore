@@ -12,6 +12,14 @@ packages/move/**/build/
 # Raw game data (large; keep local)
 data/
 
+# Python venv for static data extractor
+scripts/extract/.venv/
+scripts/extract/**/__pycache__/
+scripts/extract/*.egg-info/
+scripts/extract/.pytest_cache/
+
+# Extracted runs (raw is already ignored via data/)
+
 # Cursor / IDE
 .cursorrules
 .cursor/
@@ -30,6 +38,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.envrc
 
 # Electron
 out/
@@ -39,3 +48,13 @@ release/
 /*.sh
 
 CLAUDE.md
+tasks.md
+.claude-memory
+
+# test files
+_*
+
+# Python dunder files in scripts/extract/ (override the `_*` rule above)
+!scripts/extract/**/__init__.py
+!scripts/extract/**/__main__.py
+!scripts/extract/**/_cfsd.py

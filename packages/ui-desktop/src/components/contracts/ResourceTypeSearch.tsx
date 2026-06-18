@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { normalizeTypeDisplayName, searchTypesForContractResources } from "@powerlay/core";
 import type { GameData } from "../../preload";
 import { parseGamePaste } from "../../utils/format";
-import { ItemIcon } from "../ItemIcon";
+import { ItemIcon, useIconsBaseUrl } from "../ItemIcon";
 
 const MAX_RESULTS = 50;
 /** Avoid listing ~10k alphabetically-first types on focus; builder-style pickers expect typing first. */
@@ -66,6 +66,7 @@ export function ResourceTypeSearch({
     }
   };
 
+  const iconsBaseUrl = useIconsBaseUrl();
   const showSelectedIcon = typeID != null && typeID > 0;
 
   return (
@@ -106,7 +107,15 @@ export function ResourceTypeSearch({
                   setOpen(false);
                 }}
               >
-                <ItemIcon typeID={m.typeID} size={20} className="rounded-sm shrink-0" fallback="·" />
+                {iconsBaseUrl && (
+                  <img
+                    src={`${iconsBaseUrl.replace(/\/?$/, "/")}${m.typeID}.png`}
+                    alt=""
+                    width={20}
+                    height={20}
+                    className="rounded-sm shrink-0"
+                  />
+                )}
                 <span className="min-w-0 truncate">{m.name}</span>
               </li>
             ))

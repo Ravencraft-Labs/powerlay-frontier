@@ -45,6 +45,7 @@ function CloseIcon({ className }: { className?: string }) {
 export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
+  const [bgOpacity, setBgOpacity] = useState(92);
   const frame = getCurrentFrame();
 
   const loadLockState = useCallback(async () => {
@@ -58,6 +59,19 @@ export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
     const id = setInterval(loadLockState, 500);
     return () => clearInterval(id);
   }, [loadLockState]);
+
+  useEffect(() => {
+    const api = (window as unknown as { efOverlay?: { settings?: { get?: () => Promise<{ overlayOpacity?: number }> } } }).efOverlay;
+    api?.settings?.get?.().then((s) => {
+      if (typeof s?.overlayOpacity === "number") setBgOpacity(s.overlayOpacity);
+    });
+    const id = setInterval(() => {
+      api?.settings?.get?.().then((s) => {
+        if (typeof s?.overlayOpacity === "number") setBgOpacity(s.overlayOpacity);
+      });
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -95,7 +109,11 @@ export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
   const hasOverlayApi = typeof window !== "undefined" && (window as unknown as { efOverlay?: { overlay?: { toggleLock?: unknown; hide?: unknown } } }).efOverlay?.overlay?.toggleLock;
 
   return (
-    <div ref={containerRef} className={OVERLAY_FRAME_CLASSES.container}>
+    <div
+      ref={containerRef}
+      className={OVERLAY_FRAME_CLASSES.container}
+      style={{ backgroundColor: `color-mix(in srgb, var(--color-bg) ${bgOpacity}%, transparent)` }}
+    >
       <div className={`${OVERLAY_FRAME_CLASSES.header} flex justify-between items-center gap-2`}>
         <span className="min-w-0 truncate">{title}</span>
         {!locked && hasOverlayApi && (
