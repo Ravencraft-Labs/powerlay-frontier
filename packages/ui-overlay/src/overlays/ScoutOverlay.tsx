@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { ZONE_CATALOG } from "@powerlay/core";
-import type { ScoutEntry, RiftZone, CreateScoutEntryInput } from "@powerlay/core";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { buildZoneCatalog, formatSystemReport, siteTooltip } from "@powerlay/core";
+import type { ScoutEntry, RiftZone, CreateScoutEntryInput, ScoutSiteDef, SystemState } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
 import type { PocEdgeResult, PocLogLiteStatus, PocSystemLink } from "../preload.d";
@@ -15,11 +15,15 @@ const ZONE_COLORS: Record<RiftZone, string> = {
   UNKNOWN: "text-slate-400 border-slate-400/50",
 };
 
+const TYPE_COLORS: Partial<Record<string, string>> = {
+  system: "text-teal-400 border-teal-400/50",
+};
+
 const TYPE_FALLBACK = "text-muted border-border/40";
 
 function badgeColor(zone: RiftZone | undefined, type: string): string {
   if (zone && ZONE_COLORS[zone]) return ZONE_COLORS[zone];
-  return TYPE_FALLBACK;
+  return TYPE_COLORS[type] ?? TYPE_FALLBACK;
 }
 
 function badgeLabel(zone: RiftZone | undefined, type: string): string {
@@ -37,6 +41,9 @@ export function ScoutOverlay() {
   const [editingSystem, setEditingSystem] = useState(false);
   const [entries, setEntries] = useState<ScoutEntry[]>([]);
   const [defaultVisibility, setDefaultVisibility] = useState<"tribe" | "alliance" | "private">("tribe");
+  const [sites, setSites] = useState<ScoutSiteDef[]>([]);
+  const [systemState, setSystemState] = useState<SystemState | null>(null);
+  const catalog = useMemo(() => buildZoneCatalog(sites), [sites]);
   // POC: chat link capture
   const [links, setLinks] = useState<PocSystemLink[]>([]);
   const [currentSystemId, setCurrentSystemId] = useState<number | null>(null);
@@ -56,6 +63,8 @@ export function ScoutOverlay() {
       ]);
       setActiveSystem(sys ?? null);
       setEntries(list ?? []);
+      const info = sys ? await scout.getSystemInfo?.(sys) : null;
+      setSystemState(info?.state ?? null);
       const linkRes = await api?.pocMap?.getLinks?.();
       if (linkRes) {
         setLinks(linkRes.links);
@@ -65,6 +74,10 @@ export function ScoutOverlay() {
     } catch {
       /* ignore */
     }
+  }, [api?.scout]);
+
+  useEffect(() => {
+    api?.scout?.getSites?.().then(setSites).catch(() => setSites([]));
   }, [api?.scout]);
 
   useEffect(() => {
@@ -191,6 +204,13 @@ export function ScoutOverlay() {
               <span className="font-mono text-sm text-text flex-1 truncate">
                 {activeSystem ?? <span className="text-muted italic text-xs">detecting…</span>}
               </span>
+              {systemState && (
+                <span className={`text-[10px] font-semibold border rounded px-1 shrink-0 ${
+                  systemState === "DEVASTATED" ? "text-red-400 border-red-400/50" : "text-emerald-400 border-emerald-400/50"
+                }`}>
+                  {systemState}
+                </span>
+              )}
               <button type="button" onClick={() => { setOverrideInput(activeSystem ?? ""); setEditingSystem(true); }}
                 className="text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 shrink-0" title="Set system">✎</button>
               <button type="button" onClick={async () => {
@@ -260,18 +280,19 @@ export function ScoutOverlay() {
 
         {/* Zone quick-picker */}
         <div className="px-3 pb-2 flex flex-col gap-1">
-          {ZONE_CATALOG.map(({ zone, sites }) => (
+          {catalog.map(({ zone, sites }) => (
             <div key={zone} className="flex items-start gap-1.5">
               <span className="w-14 shrink-0 text-[10px] font-semibold text-muted uppercase tracking-wide pt-1 text-right">{zone}</span>
               <div className="flex flex-wrap gap-1">
                 {sites.map((site) => {
-                  const active = !!findActiveEntry(entries, activeSystem ?? "", site);
+                  const active = !!findActiveEntry(entries, activeSystem ?? "", site.name);
                   return (
                     <button
-                      key={site}
+                      key={site.name}
                       type="button"
                       disabled={!activeSystem}
-                      onClick={() => void toggleSite(zone, site)}
+                      title={siteTooltip(site)}
+                      onClick={() => void toggleSite(zone, site.name)}
                       className={`
                         text-[10px] font-medium px-1.5 py-0.5 rounded border cursor-pointer transition-colors
                         disabled:opacity-30 disabled:cursor-default
@@ -281,7 +302,7 @@ export function ScoutOverlay() {
                         }
                       `}
                     >
-                      {site.toUpperCase()}
+                      {site.name.toUpperCase()}
                     </button>
                   );
                 })}
@@ -301,15 +322,17 @@ export function ScoutOverlay() {
                   <span className={`shrink-0 font-bold border rounded px-1 ${badgeColor(e.zone as RiftZone | undefined, e.type)}`}>
                     {badgeLabel(e.zone as RiftZone | undefined, e.type)}
                   </span>
-                  <span className="text-text flex-1 truncate">{e.subtype ?? e.type}</span>
-                  <button
+                  <span className="text-text flex-1 truncate">
+                    {e.report ? formatSystemReport(e.report) : e.subtype ?? e.type}
+                  </span>
+                  {e.type !== "system" && <button
                     type="button"
                     onClick={() => void markDepleted(e.id)}
                     className="shrink-0 text-muted hover:text-yellow-400 border border-border/30 hover:border-yellow-400/40 rounded px-1 cursor-pointer bg-transparent"
                     title="Mark as depleted"
                   >
                     depleted
-                  </button>
+                  </button>}
                 </div>
               ))}
           </div>

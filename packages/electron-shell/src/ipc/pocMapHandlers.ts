@@ -153,9 +153,20 @@ function saveEdges(pairs: [number, number][], source: PocEdge["source"], gateId?
 /** ID of the current system: straight from LogLite while connected, else via the Local log name. */
 function currentSystemId(): number | null {
   if (logLiteSystemId != null && getLogLiteStatus().state === "connected") return logLiteSystemId;
-  const current = getCurrentSystem()?.toLowerCase();
-  if (!current) return null;
-  return Object.values(loadLinks()).find((l) => l.name?.toLowerCase() === current)?.id ?? null;
+  const current = getCurrentSystem();
+  return current ? systemIdByName(current) : null;
+}
+
+/**
+ * ID for a system name as players see it (Local log, chat links). Cycle 7 names come from the
+ * server, so the only source is what LogLite and chat links have bound so far.
+ */
+export function systemIdByName(name: string): number | null {
+  if (name === getCurrentSystem()) {
+    if (logLiteSystemId != null && getLogLiteStatus().state === "connected") return logLiteSystemId;
+  }
+  const n = name.toLowerCase();
+  return Object.values(loadLinks()).find((l) => l.name?.toLowerCase() === n)?.id ?? null;
 }
 
 export interface PocEdgeResult {

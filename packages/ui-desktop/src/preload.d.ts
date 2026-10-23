@@ -16,6 +16,8 @@ import type {
   ScoutSettings,
   ScoutVisibility,
   ScoutActivityEvent,
+  ScoutSiteDef,
+  SystemState,
 } from "@powerlay/core";
 
 export interface SignDeliveryTxParams {
@@ -253,6 +255,8 @@ export interface EFOverlayAPI {
     startWatching: () => Promise<void>;
     stopWatching: () => Promise<void>;
     getActivityLog: (limit?: number) => Promise<ScoutActivityEvent[]>;
+    getSites?: () => Promise<ScoutSiteDef[]>;
+    getSystemInfo?: (system: string) => Promise<{ systemId: number | null; state: SystemState | null }>;
   };
   /** POC (throwaway): Map tab. */
   pocMap?: {

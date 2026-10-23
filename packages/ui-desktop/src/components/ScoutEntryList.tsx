@@ -1,9 +1,9 @@
 import React, { useMemo } from "react";
-import { RIFT_ZONES } from "@powerlay/core";
+import { RIFT_ZONES, formatSystemReport } from "@powerlay/core";
 import type { ScoutEntry, RiftZone } from "@powerlay/core";
 import { entryBadgeColor, entryBadgeLabel } from "./scoutZoneColors";
 
-type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure";
+type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure" | "system";
 
 interface Props {
   entries: ScoutEntry[];
@@ -79,6 +79,7 @@ function ScoutEntryRow({ entry, onMarkCleared, onDelete }: {
           {entry.stability !== undefined && (
             <span className="text-xs text-muted">{entry.stability}% stability</span>
           )}
+          {entry.report && <span className="text-text">{formatSystemReport(entry.report)}</span>}
         </div>
         {entry.notes && <div className="text-xs text-muted mt-0.5 truncate">{entry.notes}</div>}
         <div className="text-xs text-muted/60 mt-0.5 flex flex-wrap gap-x-2">
@@ -89,7 +90,7 @@ function ScoutEntryRow({ entry, onMarkCleared, onDelete }: {
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
-        {!isCleared && (
+        {!isCleared && entry.type !== "system" && (
           <button
             type="button"
             onClick={() => onMarkCleared(entry.id)}

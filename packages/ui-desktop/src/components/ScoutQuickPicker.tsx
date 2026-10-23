@@ -1,10 +1,11 @@
 import React from "react";
-import { ZONE_CATALOG } from "@powerlay/core";
-import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput } from "@powerlay/core";
+import { siteTooltip } from "@powerlay/core";
+import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, ZoneCatalogGroup } from "@powerlay/core";
 import { ZONE_COLORS } from "./scoutZoneColors";
 
 interface Props {
   system: string;
+  catalog: ZoneCatalogGroup[];
   entries: ScoutEntry[];
   defaultVisibility: ScoutVisibility;
   onAdd: (input: CreateScoutEntryInput) => void;
@@ -18,7 +19,7 @@ function findActiveEntry(entries: ScoutEntry[], system: string, subtype: string)
   ) ?? null;
 }
 
-export function ScoutQuickPicker({ system, entries, defaultVisibility, onAdd, onRemove }: Props) {
+export function ScoutQuickPicker({ system, catalog, entries, defaultVisibility, onAdd, onRemove }: Props) {
   function toggle(zone: RiftZone, subtype: string) {
     if (!system) return;
     const existing = findActiveEntry(entries, system, subtype);
@@ -38,20 +39,21 @@ export function ScoutQuickPicker({ system, entries, defaultVisibility, onAdd, on
 
   return (
     <div className="flex flex-col gap-1.5">
-      {ZONE_CATALOG.map(({ zone, sites }) => (
+      {catalog.map(({ zone, sites }) => (
         <div key={zone} className="flex items-start gap-2">
           <span className={`w-16 shrink-0 text-xs font-semibold uppercase tracking-wide pt-1 text-right ${ZONE_COLORS[zone].split(" ")[0]}`}>
             {zone}
           </span>
           <div className="flex flex-wrap gap-1.5">
             {sites.map((site) => {
-              const active = !!findActiveEntry(entries, system, site);
+              const active = !!findActiveEntry(entries, system, site.name);
               return (
                 <button
-                  key={site}
+                  key={site.name}
                   type="button"
                   disabled={!system}
-                  onClick={() => toggle(zone, site)}
+                  title={siteTooltip(site)}
+                  onClick={() => toggle(zone, site.name)}
                   className={`
                     px-2.5 py-1 text-xs font-medium rounded border cursor-pointer transition-colors
                     disabled:opacity-40 disabled:cursor-default
@@ -61,7 +63,7 @@ export function ScoutQuickPicker({ system, entries, defaultVisibility, onAdd, on
                     }
                   `}
                 >
-                  {site.toUpperCase()}
+                  {site.name.toUpperCase()}
                 </button>
               );
             })}

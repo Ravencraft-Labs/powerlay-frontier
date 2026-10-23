@@ -5,6 +5,8 @@ import { loadSettings } from "./settingsStore.js";
 import { getScoutStore } from "./scoutStore.js";
 import { loadScoutSettings, updateScoutSettings } from "./scoutSettingsStore.js";
 import { logCreated, logCleared, logDeleted, getActivityLog } from "./scoutActivityStore.js";
+import { loadScoutStaticData } from "./scoutStaticData.js";
+import { systemIdByName } from "./pocMapHandlers.js";
 
 /** Derive the Chatlogs directory from the configured game log dir.
  *  e.g. ".../Frontier/Logs/Gamelogs" → ".../Frontier/Logs/Chatlogs"
@@ -105,6 +107,15 @@ export function registerScoutHandlers(): void {
 
   ipcMain.handle("scout:update-settings", (_event, patch: Partial<ScoutSettings>) => {
     return updateScoutSettings(patch);
+  });
+
+  ipcMain.handle("scout:get-sites", () => loadScoutStaticData().sites);
+
+  /** System ID (when LogLite or a chat link has bound the name) and its static state. */
+  ipcMain.handle("scout:get-system-info", (_event, system: string) => {
+    const systemId = system ? systemIdByName(system) : null;
+    const state = systemId != null ? loadScoutStaticData().systemStates[String(systemId)] ?? null : null;
+    return { systemId, state };
   });
 
   ipcMain.handle("scout:get-activity-log", (_event, limit?: number) => {

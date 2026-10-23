@@ -39,6 +39,8 @@ def _import_all_targets() -> None:
         solarsystems as _ss,
         spacecomponents as _sc,
         icons as _icons,
+        ecosystem as _eco,
+        systemstate as _sst,
     )
 
 

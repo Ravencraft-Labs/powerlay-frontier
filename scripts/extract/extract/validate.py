@@ -46,6 +46,7 @@ def _import_all_targets() -> None:
         types as _t, groups as _g,
         industry_blueprints as _bp, industry_facilities as _fac,
         solarsystems as _ss, spacecomponents as _sc, icons as _ic,
+        ecosystem as _eco, systemstate as _sst,
     )
 
 

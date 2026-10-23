@@ -126,6 +126,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
     startWatching: () => ipcRenderer.invoke("scout:start-watching"),
     stopWatching: () => ipcRenderer.invoke("scout:stop-watching"),
     getActivityLog: (limit?: number) => ipcRenderer.invoke("scout:get-activity-log", limit),
+    getSites: () => ipcRenderer.invoke("scout:get-sites"),
+    getSystemInfo: (system: string) => ipcRenderer.invoke("scout:get-system-info", system),
   },
   pocMap: {
     getBase: () => ipcRenderer.invoke("pocMap:get-base"),

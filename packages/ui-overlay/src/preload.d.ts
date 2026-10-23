@@ -11,6 +11,8 @@ import type {
   CreateScoutEntryInput,
   UpdateScoutEntryInput,
   ScoutSettings,
+  ScoutSiteDef,
+  SystemState,
 } from "@powerlay/core";
 
 export interface MiningOreEntry {
@@ -90,6 +92,8 @@ export interface EFOverlayAPI {
     updateSettings: (patch: Partial<ScoutSettings>) => Promise<ScoutSettings>;
     startWatching: () => Promise<void>;
     stopWatching: () => Promise<void>;
+    getSites?: () => Promise<ScoutSiteDef[]>;
+    getSystemInfo?: (system: string) => Promise<{ systemId: number | null; state: SystemState | null }>;
   };
   /** POC (throwaway): chat link → system ID capture, shared with the desktop Map tab. */
   pocMap?: {

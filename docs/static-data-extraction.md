@@ -41,6 +41,8 @@ After promote, run `pnpm strip-data` to produce `data/stripped/` for the app bui
 | solarsystems | res:/staticdata/systems.static + systems.schema; if absent (Oct 2026+ clients) — `Map/SolarSystems` labels from localization_fsd_main.pickle (names only, no topology) | raw/solarsystems.json |
 | spacecomponents | res:/staticdata/spacecomponentsbytype.fsdbinary | raw/spacecomponentsbytype.json |
 | icons | res:/staticdata/iconids.fsdbinary + per-icon files | raw/icons/*.png |
+| ecosystem | res:/staticdata/ecosystem.fsdbinary | raw/ecosystem.json |
+| systemstate | res:/staticdata/systemstate.fsdbinary | raw/systemstate.json |
 
 ## Client data changes (Oct 2026 update)
 

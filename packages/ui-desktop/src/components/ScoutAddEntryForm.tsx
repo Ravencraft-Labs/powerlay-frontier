@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { RIFT_ZONES } from "@powerlay/core";
-import type { CreateScoutEntryInput, ScoutEntryType, RiftZone, ScoutVisibility } from "@powerlay/core";
+import type { CreateScoutEntryInput, ScoutEntryType, RiftZone, ScoutVisibility, ZoneCatalogGroup } from "@powerlay/core";
 
 const VISIBILITY_LABELS: Record<ScoutVisibility, string> = {
   tribe: "Tribe",
@@ -8,8 +8,10 @@ const VISIBILITY_LABELS: Record<ScoutVisibility, string> = {
   private: "Private",
 };
 
-const TYPE_SUBTYPES: Record<ScoutEntryType, string[]> = {
-  rift: ["Rift 05D8", "Rift F935", "Rift 0633", "Rift F8DA", "Rift F9BF", "Rift 0769", "Rift 0020"],
+/** Entry types this form creates; "system" reports have their own form. */
+type FormEntryType = Exclude<ScoutEntryType, "system">;
+
+const TYPE_SUBTYPES: Record<Exclude<FormEntryType, "rift">, string[]> = {
   anomaly: ["Combat Site", "Data Site", "Relic Site", "Ore Site", "Ghost Site"],
   resource: ["Veldspar", "Scordite", "Pyroxeres", "Plagioclase", "Omber", "Kernite"],
   structure: ["Enemy Structure", "Neutral Structure", "Deployed Object", "Gate", "NPC Station"],
@@ -18,6 +20,7 @@ const TYPE_SUBTYPES: Record<ScoutEntryType, string[]> = {
 
 interface Props {
   currentSystem: string;
+  catalog: ZoneCatalogGroup[];
   defaultVisibility: ScoutVisibility;
   onSubmit: (input: CreateScoutEntryInput) => void;
 }
@@ -26,8 +29,8 @@ const inputCls = "w-full px-2 py-1.5 text-sm bg-bg border border-border-input ro
 const selectCls = "w-full px-2 py-1.5 text-sm bg-bg border border-border-input rounded text-text focus:outline-none focus:border-selection-bg";
 const labelCls = "block text-xs text-muted mb-1";
 
-export function ScoutAddEntryForm({ currentSystem, defaultVisibility, onSubmit }: Props) {
-  const [type, setType] = useState<ScoutEntryType>("rift");
+export function ScoutAddEntryForm({ currentSystem, catalog, defaultVisibility, onSubmit }: Props) {
+  const [type, setType] = useState<FormEntryType>("rift");
   const [subtype, setSubtype] = useState("");
   const [zone, setZone] = useState<RiftZone | "">("");
   const [stability, setStability] = useState("");
@@ -56,7 +59,10 @@ export function ScoutAddEntryForm({ currentSystem, defaultVisibility, onSubmit }
     setNotes("");
   }
 
-  const suggestedSubtypes = TYPE_SUBTYPES[type];
+  const suggestedSubtypes =
+    type === "rift"
+      ? catalog.find((g) => g.zone === "RIFT")?.sites.map((s) => s.name) ?? []
+      : TYPE_SUBTYPES[type];
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
@@ -66,7 +72,7 @@ export function ScoutAddEntryForm({ currentSystem, defaultVisibility, onSubmit }
           <select
             className={selectCls}
             value={type}
-            onChange={(e) => { setType(e.target.value as ScoutEntryType); setSubtype(""); setZone(""); }}
+            onChange={(e) => { setType(e.target.value as FormEntryType); setSubtype(""); setZone(""); }}
           >
             <option value="rift">Rift</option>
             <option value="anomaly">Anomaly</option>

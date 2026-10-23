@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, ScoutSettings, ScoutActivityEvent } from "@powerlay/core";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildZoneCatalog } from "@powerlay/core";
+import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, ScoutSettings, ScoutActivityEvent, ScoutSiteDef, SystemState } from "@powerlay/core";
 import { ScoutQuickPicker } from "./ScoutQuickPicker";
 import { ScoutAddEntryForm } from "./ScoutAddEntryForm";
+import { ScoutSystemReportForm } from "./ScoutSystemReportForm";
+import { SYSTEM_STATE_COLORS } from "./scoutZoneColors";
 import { ScoutEntryList } from "./ScoutEntryList";
 import { OverlayWithLock } from "./OverlayWithLock";
 
@@ -13,7 +16,7 @@ const filterPillCls = (on: boolean) =>
       : "border-border/50 text-muted hover:text-text hover:border-border"
   }`;
 
-type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure";
+type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure" | "system";
 
 const FILTER_OPTIONS: Array<{ label: string; value: FilterValue }> = [
   { label: "All",    value: "all" },
@@ -24,6 +27,7 @@ const FILTER_OPTIONS: Array<{ label: string; value: FilterValue }> = [
   { label: "OUTER",  value: "OUTER" },
   { label: "FERAL",  value: "FERAL" },
   { label: "UNKNOWN", value: "UNKNOWN" },
+  { label: "Reports", value: "system" },
   { label: "Notes",  value: "note" },
 ];
 
@@ -42,12 +46,34 @@ export function ScoutSection() {
   const [filterType, setFilterType] = useState<FilterValue>("all");
   const [settings, setSettings] = useState<ScoutSettings>({ defaultVisibility: "tribe" });
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [sites, setSites] = useState<ScoutSiteDef[]>([]);
+  const [systemState, setSystemState] = useState<SystemState | null>(null);
   const [activityLog, setActivityLog] = useState<ScoutActivityEvent[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [chatLogError, setChatLogError] = useState<string | null>(null);
   const overrideInputRef = useRef<HTMLInputElement>(null);
 
   const activeSystem = systemOverride ?? autoSystem ?? "";
+  const catalog = useMemo(() => buildZoneCatalog(sites), [sites]);
+
+  useEffect(() => {
+    window.efOverlay?.scout?.getSites?.().then(setSites).catch(() => setSites([]));
+  }, []);
+
+  // State is keyed by system ID, which only resolves once LogLite or a chat link has bound the name.
+  useEffect(() => {
+    setSystemState(null);
+    if (!activeSystem) return;
+    let cancelled = false;
+    const refresh = () =>
+      window.efOverlay?.scout?.getSystemInfo?.(activeSystem)
+        .then((info) => { if (!cancelled) setSystemState(info.state); })
+        .catch(() => {});
+    void refresh();
+    const interval = setInterval(refresh, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeSystem]);
 
   const loadEntries = useCallback(async () => {
     try {
@@ -221,6 +247,14 @@ export function ScoutSection() {
             <span className={`flex-1 font-mono text-sm ${activeSystem ? "text-text" : "text-muted italic"}`}>
               {activeSystem || (autoSystem === null ? "detecting…" : "unknown")}
             </span>
+            {systemState && (
+              <span
+                className={`text-xs font-semibold border rounded px-1.5 py-0.5 ${SYSTEM_STATE_COLORS[systemState] ?? "text-muted border-border/40"}`}
+                title="System state from static game data"
+              >
+                {systemState}
+              </span>
+            )}
             {systemOverride && (
               <span className="text-xs text-yellow-400/80 border border-yellow-400/30 rounded px-1.5 py-0.5">manual</span>
             )}
@@ -284,11 +318,33 @@ export function ScoutSection() {
         </div>
         <ScoutQuickPicker
           system={activeSystem}
+          catalog={catalog}
           entries={entries}
           defaultVisibility={settings.defaultVisibility}
           onAdd={(input) => void handleAddEntry(input)}
           onRemove={(id) => void handleRemoveEntry(id)}
         />
+      </div>
+
+      {/* System report: values only visible in game UI (ef-map collects the same) */}
+      <div className="mb-3">
+        <button
+          type="button"
+          onClick={() => setReportOpen((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 p-0 mb-2"
+        >
+          <span>{reportOpen ? "▾" : "▸"}</span>
+          <span>System report (planets, spectral class, transient mass, infestation)</span>
+        </button>
+        {reportOpen && (
+          <div className="p-3 rounded-md border border-border/40 bg-bg/20">
+            <ScoutSystemReportForm
+              currentSystem={activeSystem}
+              defaultVisibility={settings.defaultVisibility}
+              onSubmit={(input) => void handleAddEntry(input)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Advanced: notes / resources / structures */}
@@ -305,6 +361,7 @@ export function ScoutSection() {
           <div className="p-3 rounded-md border border-border/40 bg-bg/20">
             <ScoutAddEntryForm
               currentSystem={activeSystem}
+              catalog={catalog}
               defaultVisibility={settings.defaultVisibility}
               onSubmit={(input) => void handleAddEntry(input)}
             />

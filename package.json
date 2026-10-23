@@ -47,6 +47,8 @@
           "stripped/structure_recipes.json",
           "stripped/oreGroupIDs.json",
           "stripped/solarsystems.json",
+          "stripped/scout_sites.json",
+          "stripped/system_states.json",
           "raw/industry_blueprints.json",
           "raw/industry_facilities.json",
           "poc-map/base.json"

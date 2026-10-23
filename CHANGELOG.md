@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Scout: system reports with planets, spectral class, transient mass and infestation index.
+- Scout: SETTLED / DEVASTATED badge for the current system.
+- Scout: quick-mark sites now come from game data, including the Cycle 7 sites.
+
+### Fixed
+
+- Builder: ore cost counts every ore type, and ores are no longer expanded into salvage recipes.
+
 ---
 
 ## [0.1.7] - 2026-03-31
