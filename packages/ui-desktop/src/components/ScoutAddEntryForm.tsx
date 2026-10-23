@@ -1,7 +1,7 @@
 import React, { useState } from "react";
+import { RIFT_ZONES } from "@powerlay/core";
 import type { CreateScoutEntryInput, ScoutEntryType, RiftZone, ScoutVisibility } from "@powerlay/core";
 
-const RIFT_ZONES: RiftZone[] = ["RIFT", "INNER", "TROJAN", "FRINGE", "OUTER", "FERAL"];
 const VISIBILITY_LABELS: Record<ScoutVisibility, string> = {
   tribe: "Tribe",
   alliance: "Alliance",

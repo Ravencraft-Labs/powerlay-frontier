@@ -1,34 +1,7 @@
 import React from "react";
+import { ZONE_CATALOG } from "@powerlay/core";
 import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput } from "@powerlay/core";
 import { ZONE_COLORS } from "./scoutZoneColors";
-
-/** Anomaly catalog grouped by zone, matching EVE Frontier site types. */
-export const ZONE_CATALOG: Array<{ zone: RiftZone; sites: string[] }> = [
-  {
-    zone: "RIFT",
-    sites: ["Rift 05D8", "Rift F935", "Rift 0633", "Rift F8DA", "Rift F9BF", "Rift 0769", "Rift 0020"],
-  },
-  {
-    zone: "INNER",
-    sites: ["Ancient Cluster", "Derelict Bay", "Derelict Quarry", "Ruins", "Stone Cluster"],
-  },
-  {
-    zone: "TROJAN",
-    sites: ["Drifting Annex", "Garden"],
-  },
-  {
-    zone: "FRINGE",
-    sites: ["Crossing", "Latticeway", "Tallyport"],
-  },
-  {
-    zone: "OUTER",
-    sites: ["Abandoned Foundry", "Blue Drift", "Grove", "Shale", "Vestiges"],
-  },
-  {
-    zone: "FERAL",
-    sites: ["Mooneater", "Xeroti"],
-  },
-];
 
 interface Props {
   system: string;
@@ -67,7 +40,7 @@ export function ScoutQuickPicker({ system, entries, defaultVisibility, onAdd, on
     <div className="flex flex-col gap-1.5">
       {ZONE_CATALOG.map(({ zone, sites }) => (
         <div key={zone} className="flex items-start gap-2">
-          <span className={`w-14 shrink-0 text-xs font-semibold uppercase tracking-wide pt-1 text-right ${ZONE_COLORS[zone].split(" ")[0]}`}>
+          <span className={`w-16 shrink-0 text-xs font-semibold uppercase tracking-wide pt-1 text-right ${ZONE_COLORS[zone].split(" ")[0]}`}>
             {zone}
           </span>
           <div className="flex flex-wrap gap-1.5">

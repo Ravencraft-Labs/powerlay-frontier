@@ -1,7 +1,7 @@
 import type { ScoutEntry, ScoutEntryType, RiftZone, ScoutVisibility } from "./types.js";
+import { RIFT_ZONES } from "./catalog.js";
 
 const ENTRY_TYPES: ScoutEntryType[] = ["rift", "anomaly", "resource", "structure", "note"];
-const RIFT_ZONES: RiftZone[] = ["RIFT", "INNER", "TROJAN", "FRINGE", "OUTER", "FERAL"];
 const VISIBILITIES: ScoutVisibility[] = ["tribe", "alliance", "private"];
 const STATUSES = ["active", "expired", "cleared"] as const;
 

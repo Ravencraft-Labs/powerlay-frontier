@@ -23,6 +23,7 @@ const FILTER_OPTIONS: Array<{ label: string; value: FilterValue }> = [
   { label: "FRINGE", value: "FRINGE" },
   { label: "OUTER",  value: "OUTER" },
   { label: "FERAL",  value: "FERAL" },
+  { label: "UNKNOWN", value: "UNKNOWN" },
   { label: "Notes",  value: "note" },
 ];
 

@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { RIFT_ZONES } from "@powerlay/core";
 import type { ScoutEntry, RiftZone } from "@powerlay/core";
 import { entryBadgeColor, entryBadgeLabel } from "./scoutZoneColors";
 
@@ -15,8 +16,7 @@ export function ScoutEntryList({ entries, filter, onMarkCleared, onDelete }: Pro
   const filtered = useMemo(() => {
     if (filter === "all") return entries;
     // Zone filter
-    const ZONES = ["RIFT", "INNER", "TROJAN", "FRINGE", "OUTER", "FERAL"];
-    if (ZONES.includes(filter)) return entries.filter((e) => e.zone === filter);
+    if (RIFT_ZONES.includes(filter as RiftZone)) return entries.filter((e) => e.zone === filter);
     // Type filter
     return entries.filter((e) => e.type === filter);
   }, [entries, filter]);

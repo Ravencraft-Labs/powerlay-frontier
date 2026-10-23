@@ -1,6 +1,6 @@
 export type ScoutEntryType = "rift" | "anomaly" | "resource" | "structure" | "note";
 
-export type RiftZone = "RIFT" | "INNER" | "TROJAN" | "FRINGE" | "OUTER" | "FERAL";
+export type RiftZone = "RIFT" | "INNER" | "TROJAN" | "FRINGE" | "OUTER" | "FERAL" | "UNKNOWN";
 
 export type ScoutVisibility = "tribe" | "alliance" | "private";
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { ZONE_CATALOG } from "@powerlay/core";
 import type { ScoutEntry, RiftZone, CreateScoutEntryInput } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
@@ -11,6 +12,7 @@ const ZONE_COLORS: Record<RiftZone, string> = {
   FRINGE: "text-orange-400 border-orange-400/50",
   OUTER:  "text-amber-400  border-amber-400/50",
   FERAL:  "text-red-400    border-red-400/50",
+  UNKNOWN: "text-slate-400 border-slate-400/50",
 };
 
 const TYPE_FALLBACK = "text-muted border-border/40";
@@ -23,15 +25,6 @@ function badgeColor(zone: RiftZone | undefined, type: string): string {
 function badgeLabel(zone: RiftZone | undefined, type: string): string {
   return zone ?? type.toUpperCase();
 }
-
-const ZONE_CATALOG: Array<{ zone: RiftZone; sites: string[] }> = [
-  { zone: "RIFT",   sites: ["Rift 05D8", "Rift F935", "Rift 0633", "Rift F8DA", "Rift F9BF", "Rift 0769", "Rift 0020"] },
-  { zone: "INNER",  sites: ["Ancient Cluster", "Derelict Bay", "Derelict Quarry", "Ruins", "Stone Cluster"] },
-  { zone: "TROJAN", sites: ["Drifting Annex", "Garden"] },
-  { zone: "FRINGE", sites: ["Crossing", "Latticeway", "Tallyport"] },
-  { zone: "OUTER",  sites: ["Abandoned Foundry", "Blue Drift", "Grove", "Shale", "Vestiges"] },
-  { zone: "FERAL",  sites: ["Mooneater", "Xeroti"] },
-];
 
 function findActiveEntry(entries: ScoutEntry[], system: string, subtype: string): ScoutEntry | null {
   return entries.find((e) => e.system === system && e.subtype === subtype && e.status === "active") ?? null;
@@ -269,7 +262,7 @@ export function ScoutOverlay() {
         <div className="px-3 pb-2 flex flex-col gap-1">
           {ZONE_CATALOG.map(({ zone, sites }) => (
             <div key={zone} className="flex items-start gap-1.5">
-              <span className="w-11 shrink-0 text-[10px] font-semibold text-muted uppercase tracking-wide pt-1 text-right">{zone}</span>
+              <span className="w-14 shrink-0 text-[10px] font-semibold text-muted uppercase tracking-wide pt-1 text-right">{zone}</span>
               <div className="flex flex-wrap gap-1">
                 {sites.map((site) => {
                   const active = !!findActiveEntry(entries, activeSystem ?? "", site);
