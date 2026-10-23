@@ -16,6 +16,15 @@ export function getCurrentSystem(): string | null {
   return currentSystem;
 }
 
+type LocalSystemListener = (system: string) => void;
+const localSystemListeners = new Set<LocalSystemListener>();
+
+/** Live "Channel changed to Local" lines (not the startup reverse scan). Returns an unsubscribe. */
+export function onLocalSystemLine(listener: LocalSystemListener): () => void {
+  localSystemListeners.add(listener);
+  return () => localSystemListeners.delete(listener);
+}
+
 export function getChatLogError(): string | null {
   return chatLogError;
 }
@@ -67,6 +76,7 @@ export function startChatLogReader(chatLogDir: string = DEFAULT_CHAT_LOG_DIR, po
       if (event) {
         currentSystem = event.system;
         appLog.info("chatLogReader: system changed", { system: event.system });
+        for (const listener of localSystemListeners) listener(event.system);
       }
     },
     onError: (err) => {

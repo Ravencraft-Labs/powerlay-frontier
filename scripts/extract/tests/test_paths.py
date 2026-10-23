@@ -46,6 +46,14 @@ def _make_windows_install(base: Path, build: str) -> Path:
     return root
 
 
+def test_resolve_prefers_resfiles_next_to_build_on_macos(tmp_path: Path):
+    _make_mac_install(tmp_path, "stillness")
+    shared = tmp_path / "Library" / "Application Support" / "EVE Frontier" / "SharedCache" / "ResFiles"
+    shared.mkdir()
+    client = resolve_client_root(build="stillness", home=tmp_path, platform="darwin")
+    assert client.resfiles_dir == shared
+
+
 def test_candidate_roots_returns_platform_entries():
     entries = candidate_roots(home=Path("/Users/test"), platform="darwin", build="stillness")
     assert any("EVE Frontier/SharedCache/stillness" in str(p) for p in entries)

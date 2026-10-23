@@ -2,6 +2,17 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { OVERLAY_FRAME_CLASSES } from "../overlayStyles";
 import { getCurrentFrame } from "../overlayRegistry";
 import { OverlayLockProvider } from "../context/OverlayLockContext";
+import { ResizeGrip } from "./ResizeGrip";
+
+type OverlaySizeApi = {
+  efOverlay?: {
+    overlay?: {
+      getUserSize?: (f: string, bid?: string) => Promise<{ width: number; height: number } | null>;
+      setUserSize?: (f: string, w: number, h: number, bid?: string) => Promise<void>;
+      clearUserSize?: (f: string, bid?: string) => Promise<void>;
+    };
+  };
+};
 
 export interface OverlayFrameProps {
   title: React.ReactNode;
@@ -40,13 +51,22 @@ function CloseIcon({ className }: { className?: string }) {
  * Shared layout for overlay frames.
  * Provides consistent container and header styling; content is passed as children.
  * Reports content size to main process so the overlay window matches exactly (no invisible click-blocking area).
- * When unlocked: shows lock and close buttons. When locked: hides all interactive buttons.
+ * When unlocked: shows lock and close buttons and a resize grip. When locked: hides all interactive buttons.
+ * Once resized with the grip the frame keeps that size (content scrolls) until the grip is double-clicked.
  */
 export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [bgOpacity, setBgOpacity] = useState(92);
+  /** User-set size; null = fit content. */
+  const [userSize, setUserSize] = useState<{ w: number; h: number } | null>(null);
   const frame = getCurrentFrame();
+  const sizeApi = (window as unknown as OverlaySizeApi).efOverlay?.overlay;
+  const bid = frame === "builder" ? buildId ?? undefined : undefined;
+
+  useEffect(() => {
+    sizeApi?.getUserSize?.(frame, bid).then((s) => setUserSize(s ? { w: s.width, h: s.height } : null));
+  }, [sizeApi, frame, bid]);
 
   const loadLockState = useCallback(async () => {
     const api = (window as unknown as { efOverlay?: { overlay?: { getLockState?: (f: string, bid?: string) => Promise<boolean> } } }).efOverlay;
@@ -111,8 +131,11 @@ export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
   return (
     <div
       ref={containerRef}
-      className={OVERLAY_FRAME_CLASSES.container}
-      style={{ backgroundColor: `color-mix(in srgb, var(--color-bg) ${bgOpacity}%, transparent)` }}
+      className={`${OVERLAY_FRAME_CLASSES.container} relative ${userSize ? "flex flex-col" : ""}`}
+      style={{
+        backgroundColor: `color-mix(in srgb, var(--color-bg) ${bgOpacity}%, transparent)`,
+        ...(userSize && { width: userSize.w, height: userSize.h, minWidth: 0, maxWidth: "none" }),
+      }}
     >
       <div className={`${OVERLAY_FRAME_CLASSES.header} flex justify-between items-center gap-2`}>
         <span className="min-w-0 truncate">{title}</span>
@@ -137,9 +160,25 @@ export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
           </div>
         )}
       </div>
-      <OverlayLockProvider locked={locked}>
-        {typeof children === "function" ? children(locked) : children}
-      </OverlayLockProvider>
+      <div className={userSize ? "flex-1 min-h-0 overflow-y-auto" : undefined}>
+        <OverlayLockProvider locked={locked}>
+          {typeof children === "function" ? children(locked) : children}
+        </OverlayLockProvider>
+      </div>
+      {!locked && !!hasOverlayApi && !!sizeApi?.setUserSize && (
+        <ResizeGrip
+          getSize={() => {
+            const r = containerRef.current!.getBoundingClientRect();
+            return { w: r.width, h: r.height };
+          }}
+          onResize={(w, h) => setUserSize({ w, h })}
+          onResizeEnd={(w, h) => void sizeApi.setUserSize?.(frame, w, h, bid)}
+          onReset={() => {
+            setUserSize(null);
+            void sizeApi.clearUserSize?.(frame, bid);
+          }}
+        />
+      )}
     </div>
   );
 }

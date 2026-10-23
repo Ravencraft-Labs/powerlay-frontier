@@ -9,6 +9,9 @@ dist/
 # Move build output
 packages/move/**/build/
 
+# Local user plugins (never shipped or committed)
+/plugins/
+
 # Raw game data (large; keep local)
 data/
 

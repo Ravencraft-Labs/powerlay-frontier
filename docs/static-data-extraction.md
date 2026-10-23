@@ -23,7 +23,7 @@ pnpm update-static-data --build stillness
 
 The orchestrator:
 
-1. Resolves the client install at `~/Library/Application Support/EVE Frontier/SharedCache/<build>/eve.app/Contents/Resources/build/` (macOS) or `C:\CCP\EVE Frontier\<build>\stillness\` (Windows).
+1. Resolves the client install at `~/Library/Application Support/EVE Frontier/SharedCache/<build>/eve.app/Contents/Resources/build/` (macOS; ResFiles from `SharedCache/ResFiles`, falling back to the legacy `~/Library/Application Support/Frontier/SharedCache/ResFiles`) or `C:\CCP\EVE Frontier\<build>\stillness\` (Windows).
 2. Extracts every registered target into `data/extracted/<build>-<server>-<ts>/raw/`.
 3. Validates the run; writes `validation-report.json`.
 4. Prompts before moving the previous `data/raw/` to `data/raw.bak.<ts>/` and promoting the new files in.
@@ -38,9 +38,16 @@ After promote, run `pnpm strip-data` to produce `data/stripped/` for the app bui
 | groups | res:/staticdata/groups.fsdbinary | raw/groups.json |
 | industry_blueprints | res:/staticdata/industry_blueprints.fsdbinary | raw/industry_blueprints.json |
 | industry_facilities | res:/staticdata/industry_facilities.fsdbinary | raw/industry_facilities.json |
-| solarsystems | res:/staticdata/systems.static + systems.schema | raw/solarsystems.json |
+| solarsystems | res:/staticdata/systems.static + systems.schema; if absent (Oct 2026+ clients) — `Map/SolarSystems` labels from localization_fsd_main.pickle (names only, no topology) | raw/solarsystems.json |
 | spacecomponents | res:/staticdata/spacecomponentsbytype.fsdbinary | raw/spacecomponentsbytype.json |
 | icons | res:/staticdata/iconids.fsdbinary + per-icon files | raw/icons/*.png |
+
+## Client data changes (Oct 2026 update)
+
+- **Python 3.12 still required.** CCP loaders in `bin64/` are built against CPython 3.12. If Homebrew drops `python@3.12`, reinstall it and recreate `scripts/extract/.venv`.
+- **Ores** moved from `* Ores` groups (5012–5020, now empty) to `* Regoliths` groups (5144–5148). `strip-data` matches both name patterns.
+- **Structure recipes** moved from `assemblyConstruction` (now empty) to `smartDeployable.constructionCost` on the structure type itself. `strip-data` reads both, new format wins.
+- **Solar systems:** `systems.static` is gone; the client streams the map from the server. Only names are available (via localization labels). ~97k labels are unnamed placeholders (text == ID) and are dropped.
 
 ## When something fails
 

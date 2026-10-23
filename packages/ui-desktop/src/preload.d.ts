@@ -121,7 +121,8 @@ export interface GameData {
   errors?: GameDataErrors;
 }
 
-export type OverlayShellFrame = "contracts" | "builder" | "scout";
+/** "map" (POC): the mini-map overlay window. */
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map";
 
 export interface EFOverlayAPI {
   contracts?: {
@@ -201,6 +202,7 @@ export interface EFOverlayAPI {
       contractsApiBase?: string;
       storageApiBase?: string;
       overlayOpacity?: number;
+      miniMapOpacity?: number;
     }>;
     set: (settings: {
       gameLogDir?: string;
@@ -209,6 +211,7 @@ export interface EFOverlayAPI {
       contractsApiBase?: string;
       storageApiBase?: string;
       overlayOpacity?: number;
+      miniMapOpacity?: number;
     }) => Promise<void>;
   };
   app?: {
@@ -251,11 +254,97 @@ export interface EFOverlayAPI {
     stopWatching: () => Promise<void>;
     getActivityLog: (limit?: number) => Promise<ScoutActivityEvent[]>;
   };
+  /** POC (throwaway): Map tab. */
+  pocMap?: {
+    getBase: () => Promise<PocMapBase | { error: string }>;
+    setLogLite: (on: boolean) => Promise<unknown>;
+    getLogLiteStatus: () => Promise<PocLogLiteStatus>;
+    watchClipboard: (on: boolean) => Promise<void>;
+    getLinks: () => Promise<{
+      links: PocSystemLink[];
+      lastIngested: PocSystemLink[];
+      areaNames: { regions: Record<string, string>; constellations: Record<string, string> };
+      edges: PocEdge[];
+      currentSystemId: number | null;
+    }>;
+    ingestText: (text: string) => Promise<PocSystemLink[]>;
+    ingestClipboard: () => Promise<PocSystemLink[]>;
+    addAdjacent: (anchorId: number | null, text?: string) => Promise<PocEdgeResult>;
+    addRoute: (text?: string) => Promise<PocEdgeResult>;
+  };
+  /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
+  plugins?: {
+    list: () => Promise<PluginInfo[]>;
+    dir: () => Promise<string>;
+    setEnabled: (id: string, enabled: boolean) => Promise<PluginInfo[]>;
+    rendererSource: (id: string) => Promise<string | null>;
+    invoke: (id: string, channel: string, ...args: unknown[]) => Promise<unknown>;
+  };
   getIconsBaseUrl?: () => Promise<string>;
+}
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string | null;
+  hasRenderer: boolean;
+  enabled: boolean;
+  error?: string;
+}
+
+export interface PocMapSystem {
+  id: number;
+  n: string;
+  x: number;
+  y: number;
+  z: number;
+  c: number;
+  r: number;
+}
+
+export interface PocMapBase {
+  source: string;
+  systems: PocMapSystem[];
+}
+
+export interface PocEdge {
+  a: number;
+  b: number;
+  source: "adjacent" | "route" | "jump";
+  gateId?: number;
+  at: string;
+}
+
+export interface PocEdgeResult {
+  anchorId?: number | null;
+  ingested: PocSystemLink[];
+  added: PocEdge[];
+  error?: string;
+}
+
+export interface PocSystemLink {
+  id: number;
+  name: string | null;
+  linkTexts: string[];
+  source: "current-system" | "link-text" | "prefix-only" | "loglite";
+  at: string;
 }
 
 declare global {
   interface Window {
     efOverlay?: EFOverlayAPI;
   }
+}
+
+export interface PocLogLiteFeedItem {
+  at: string;
+  kind: "connected" | "disconnected" | "system" | "jump" | "edge-added" | "edge-known" | "name-bound" | "warp";
+  text: string;
+}
+
+export interface PocLogLiteStatus {
+  state: "off" | "listening" | "connected" | "error";
+  error: string | null;
+  currentSystemId: number | null;
+  feed: PocLogLiteFeedItem[];
 }

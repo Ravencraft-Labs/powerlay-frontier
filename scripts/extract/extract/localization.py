@@ -45,6 +45,32 @@ def load_localization(client: ClientRoot, language: str = "en-us") -> Dict[int, 
     return mapping
 
 
+MAIN_RESOURCE = "res:/localizationfsd/localization_fsd_main.pickle"
+
+
+def load_localization_labels(client: ClientRoot, full_path: str) -> Dict[str, int]:
+    """Return label -> messageID for every label under `full_path` (e.g. "Map/SolarSystems").
+
+    `localization_fsd_main.pickle` is `{"labels": {messageID: {"FullPath", "label", "messageID"}}, ...}`.
+    """
+    index = parse_resindex(client.stillness_dir / "resfileindex.txt")
+    if MAIN_RESOURCE not in index:
+        return {}
+    physical = index.resolve(MAIN_RESOURCE, client.resfiles_dir)
+    raw = pickle.loads(physical.read_bytes())
+    labels = raw.get("labels") if isinstance(raw, dict) else None
+    if not isinstance(labels, dict):
+        raise ValueError(f"unexpected localization main pickle shape at {physical}")
+    out: Dict[str, int] = {}
+    for entry in labels.values():
+        if not isinstance(entry, dict) or entry.get("FullPath") != full_path:
+            continue
+        label, message_id = entry.get("label"), entry.get("messageID")
+        if isinstance(label, str) and isinstance(message_id, int):
+            out[label] = message_id
+    return out
+
+
 @dataclass(frozen=True)
 class Localizer:
     """Wraps an id->text map with a safe lookup that falls back to a sentinel."""

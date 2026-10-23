@@ -31,6 +31,10 @@ export interface AppSettings {
   storageApiBase?: string;
   /** Overlay background opacity, 0–100. Default 92. */
   overlayOpacity?: number;
+  /** Mini-map window background opacity, 0–100. Unset = same as `overlayOpacity`. */
+  miniMapOpacity?: number;
+  /** Ids of local plugins switched off in Settings. */
+  disabledPlugins?: string[];
 }
 
 const DEFAULT_GAME_LOG_DIR =

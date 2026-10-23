@@ -133,3 +133,36 @@ def test_solarsystems_skips_when_static_missing(tmp_path: Path):
     availability = target.is_available(client)
     assert not availability.available
     assert "systems.static" in (availability.reason or "")
+
+
+def test_solarsystems_falls_back_to_localization_labels(tmp_path: Path):
+    client = _client(tmp_path)
+    (client.stillness_dir / "resfileindex.txt").write_text(
+        "res:/localizationfsd/localization_fsd_main.pickle,33/s.bin,h,0,10\n",
+        encoding="utf-8",
+    )
+    labels = {
+        "solar_system_30000002": 2,
+        "solar_system_30000001": 1,
+        "solar_system_30099999": 3,  # unnamed placeholder: text == id
+        "solar_system_30088888": 4,  # no text
+        "not_a_system": 5,
+    }
+    localizer = Localizer(mapping={1: "A 2560", 2: "M 974", 3: "30099999", 5: "x"})
+    run_dir = tmp_path / "run"
+
+    target = SolarsystemsTarget(
+        loader_factory=_make_loader_factory({}),
+        localizer_factory=lambda _c: localizer,
+        labels_factory=lambda _c: labels,
+    )
+    result = target.extract(client, run_dir)
+
+    assert result.status == "ok"
+    assert result.source_path == "res:/localizationfsd/localization_fsd_main.pickle"
+    data = json.loads((run_dir / "raw" / "solarsystems.json").read_text())
+    assert data == [
+        {"id": 30000001, "name": "A 2560", "constellationId": None, "regionId": None, "location": []},
+        {"id": 30000002, "name": "M 974", "constellationId": None, "regionId": None, "location": []},
+    ]
+    assert target.validate(client, run_dir) == []

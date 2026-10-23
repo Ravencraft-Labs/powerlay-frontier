@@ -46,6 +46,14 @@ def candidate_roots(home: Path, platform: Platform, build: Build) -> list[Path]:
 
 def _resfiles_dir(home: Path, platform: Platform, root: Path) -> Path:
     if platform == "darwin":
+        # Current launcher keeps ResFiles next to the builds:
+        # SharedCache/<build>/eve.app/Contents/Resources/build → SharedCache/ResFiles.
+        # Older launchers used a separate ~/Library/Application Support/Frontier tree.
+        parents = root.parents
+        if len(parents) > 4:
+            shared = parents[4] / "ResFiles"
+            if shared.is_dir():
+                return shared
         return (
             home
             / "Library"

@@ -1,8 +1,13 @@
 """solarsystems target — emit data/raw/solarsystems.json array shape.
 
-Source: `res:/staticdata/systems.static` + `res:/staticdata/systems.schema`
+Primary source: `res:/staticdata/systems.static` + `res:/staticdata/systems.schema`
 read via CCP `binaryLoader` (pure Python in `code.ccp`). Joined with
 localization for human-readable names.
+
+Fallback (Oct 2026+ clients, which stream the map from the server and no longer
+ship systems.static): names only, from `Map/SolarSystems/solar_system_<id>`
+localization labels. Topology fields are null/empty in that mode, and labels
+whose text is just the numeric ID (unnamed placeholders) are dropped.
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
-from extract.localization import Localizer, load_localization
+from extract.localization import MAIN_RESOURCE, Localizer, load_localization, load_localization_labels
 from extract.resindex import parse_resindex
 from extract.static_loader import load_static_with_schema
 from extract.targets import register_target
@@ -25,6 +30,8 @@ from extract.types import (
 
 STATIC_RESOURCE = "res:/staticdata/systems.static"
 SCHEMA_RESOURCE = "res:/staticdata/systems.schema"
+LABELS_PATH = "Map/SolarSystems"
+LABEL_PREFIX = "solar_system_"
 
 
 def _default_loader_factory(client: ClientRoot, static_path: Path, schema_path: Path) -> Any:
@@ -33,6 +40,10 @@ def _default_loader_factory(client: ClientRoot, static_path: Path, schema_path: 
 
 def _default_localizer_factory(client: ClientRoot) -> Localizer:
     return Localizer(mapping=load_localization(client, "en-us"), language="en-us")
+
+
+def _default_labels_factory(client: ClientRoot) -> dict[str, int]:
+    return load_localization_labels(client, LABELS_PATH)
 
 
 LoaderFactory = Callable[[ClientRoot, Path, Path], Any]
@@ -50,17 +61,22 @@ class SolarsystemsTarget:
         *,
         loader_factory: Optional[LoaderFactory] = None,
         localizer_factory: Optional[Callable[[ClientRoot], Localizer]] = None,
+        labels_factory: Optional[Callable[[ClientRoot], dict[str, int]]] = None,
     ):
         self._loader_factory = loader_factory or _default_loader_factory
         self._localizer_factory = localizer_factory or _default_localizer_factory
+        self._labels_factory = labels_factory or _default_labels_factory
+
+    @staticmethod
+    def _has_static(index: Any) -> bool:
+        return STATIC_RESOURCE in index and SCHEMA_RESOURCE in index
 
     def is_available(self, client: ClientRoot) -> AvailabilityResult:
         index = parse_resindex(client.stillness_dir / "resfileindex.txt")
-        if STATIC_RESOURCE not in index:
-            return AvailabilityResult.missing(f"{STATIC_RESOURCE} not in resfileindex")
-        if SCHEMA_RESOURCE not in index:
-            return AvailabilityResult.missing(f"{SCHEMA_RESOURCE} not in resfileindex")
-        return AvailabilityResult.ok()
+        if self._has_static(index) or MAIN_RESOURCE in index:
+            return AvailabilityResult.ok()
+        return AvailabilityResult.missing(
+            f"neither {STATIC_RESOURCE} nor {MAIN_RESOURCE} in resfileindex")
 
     def extract(self, client: ClientRoot, run_dir: Path) -> ExtractResult:
         availability = self.is_available(client)
@@ -68,6 +84,48 @@ class SolarsystemsTarget:
             return ExtractResult(status="skipped", error=availability.reason)
 
         index = parse_resindex(client.stillness_dir / "resfileindex.txt")
+        if self._has_static(index):
+            rows, source = self._rows_from_static(client, index), STATIC_RESOURCE
+        else:
+            rows, source = self._rows_from_labels(client), MAIN_RESOURCE
+        rows.sort(key=lambda r: r["id"])
+
+        out_dir = run_dir / "raw"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / self.OUTPUT_FILENAME
+        out_path.write_text(json.dumps(rows), encoding="utf-8")
+
+        return ExtractResult(
+            status="ok",
+            output_path=out_path,
+            row_count=len(rows),
+            source_path=source,
+        )
+
+    def _rows_from_labels(self, client: ClientRoot) -> list[dict[str, Any]]:
+        labels = self._labels_factory(client)
+        localizer = self._localizer_factory(client)
+        rows: list[dict[str, Any]] = []
+        for label, message_id in labels.items():
+            if not label.startswith(LABEL_PREFIX):
+                continue
+            try:
+                system_id = int(label[len(LABEL_PREFIX):])
+            except ValueError:
+                continue
+            name = localizer.get(message_id)
+            if not name or name == str(system_id):
+                continue
+            rows.append({
+                "id": system_id,
+                "name": name,
+                "constellationId": None,
+                "regionId": None,
+                "location": [],
+            })
+        return rows
+
+    def _rows_from_static(self, client: ClientRoot, index: Any) -> list[dict[str, Any]]:
         static_path = index.resolve(STATIC_RESOURCE, client.resfiles_dir)
         schema_path = index.resolve(SCHEMA_RESOURCE, client.resfiles_dir)
 
@@ -95,19 +153,7 @@ class SolarsystemsTarget:
                 "regionId": int(region_id),
                 "location": coords,
             })
-        rows.sort(key=lambda r: r["id"])
-
-        out_dir = run_dir / "raw"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / self.OUTPUT_FILENAME
-        out_path.write_text(json.dumps(rows), encoding="utf-8")
-
-        return ExtractResult(
-            status="ok",
-            output_path=out_path,
-            row_count=len(rows),
-            source_path=STATIC_RESOURCE,
-        )
+        return rows
 
     def validate(self, client: ClientRoot, run_dir: Path) -> List[ValidationIssue]:
         out_path = run_dir / "raw" / self.OUTPUT_FILENAME

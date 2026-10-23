@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import type { ScoutEntry, RiftZone, CreateScoutEntryInput } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
+import type { PocEdgeResult, PocLogLiteStatus, PocSystemLink } from "../preload.d";
 
 const ZONE_COLORS: Record<RiftZone, string> = {
   RIFT:   "text-cyan-400   border-cyan-400/50",
@@ -43,6 +44,13 @@ export function ScoutOverlay() {
   const [editingSystem, setEditingSystem] = useState(false);
   const [entries, setEntries] = useState<ScoutEntry[]>([]);
   const [defaultVisibility, setDefaultVisibility] = useState<"tribe" | "alliance" | "private">("tribe");
+  // POC: chat link capture
+  const [links, setLinks] = useState<PocSystemLink[]>([]);
+  const [currentSystemId, setCurrentSystemId] = useState<number | null>(null);
+  const [linkResult, setLinkResult] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState("");
+  // POC: mini-map overlay window
+  const [miniMapOpen, setMiniMapOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     const scout = api?.scout;
@@ -55,6 +63,11 @@ export function ScoutOverlay() {
       ]);
       setActiveSystem(sys ?? null);
       setEntries(list ?? []);
+      const linkRes = await api?.pocMap?.getLinks?.();
+      if (linkRes) {
+        setLinks(linkRes.links);
+        setCurrentSystemId(linkRes.currentSystemId);
+      }
       if (s?.defaultVisibility) setDefaultVisibility(s.defaultVisibility);
     } catch {
       /* ignore */
@@ -65,8 +78,9 @@ export function ScoutOverlay() {
     void loadData();
     const sysInterval = setInterval(async () => {
       try {
-        const sys = await api?.scout?.getActiveSystem?.();
+        const [sys, mapOpen] = await Promise.all([api?.scout?.getActiveSystem?.(), api?.overlay?.getVisible?.("map")]);
         setActiveSystem(sys ?? null);
+        setMiniMapOpen(!!mapOpen);
       } catch {
         /* ignore */
       }
@@ -136,6 +150,23 @@ export function ScoutOverlay() {
     }
   }
 
+  function showLinkResult(res: PocSystemLink[] | undefined) {
+    if (!res || res.length === 0) {
+      setLinkResult("No system links found");
+      return;
+    }
+    setLinkResult(res.map((l) => `${l.name ?? `${l.linkTexts[0]}…`} → ${l.id}`).join(", "));
+    void loadData();
+  }
+
+  function showEdgeResult(res: PocEdgeResult | undefined, what: string) {
+    if (!res) return;
+    setLinkResult([`${what}: +${res.added.length}`, res.error].filter(Boolean).join(" · "));
+    void loadData();
+  }
+
+  const currentLink = activeSystem ? links.find((l) => l.name?.toLowerCase() === activeSystem.toLowerCase()) : undefined;
+
   const currentSystemEntries = entries.filter((e) => e.system === activeSystem && e.status === "active");
 
   return (
@@ -169,6 +200,12 @@ export function ScoutOverlay() {
               </span>
               <button type="button" onClick={() => { setOverrideInput(activeSystem ?? ""); setEditingSystem(true); }}
                 className="text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 shrink-0" title="Set system">✎</button>
+              <button type="button" onClick={async () => {
+                  await api?.overlay?.toggle?.("map");
+                  setMiniMapOpen(!!(await api?.overlay?.getVisible?.("map")));
+                }}
+                className={`text-xs px-1.5 py-0.5 rounded border cursor-pointer bg-transparent shrink-0 ${miniMapOpen ? "border-accent/60 text-accent" : "border-border/60 text-muted hover:text-text"}`}
+                title={miniMapOpen ? "Hide map overlay" : "Show map overlay"}>Map</button>
               {activeSystem && (
                 <button type="button" onClick={() => void handleClearOverride()}
                   className="text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 shrink-0" title="Reset to auto">↺</button>
@@ -176,6 +213,57 @@ export function ScoutOverlay() {
             </div>
           )}
         </div>
+
+        {/* POC: chat link → system ID */}
+        <div className="px-3 pb-2 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span className={currentLink || currentSystemId ? "text-green-400" : "text-muted"}>
+              {currentLink || currentSystemId ? `ID ${currentLink?.id ?? currentSystemId}` : "ID unknown"}
+            </span>
+            <button
+              type="button"
+              onClick={async () => showLinkResult(await api?.pocMap?.ingestClipboard?.())}
+              className="ml-auto px-1.5 py-0.5 rounded border border-border/60 text-muted hover:text-text cursor-pointer bg-transparent"
+              title="Copy chat lines with system links in game (Ctrl+C), then press this"
+            >
+              Links from clipboard
+            </button>
+          </div>
+          <div className="flex gap-1 text-[10px]">
+            <button
+              type="button"
+              disabled={!currentSystemId}
+              onClick={async () => showEdgeResult(await api?.pocMap?.addAdjacent?.(null), "Adjacent")}
+              className="flex-1 px-1.5 py-0.5 rounded border border-border/60 text-muted hover:text-text cursor-pointer bg-transparent disabled:opacity-30 disabled:cursor-default"
+              title="Info → Adjacent Solar Systems: drag them into chat, copy the lines, press this"
+            >
+              Adjacent from clipboard
+            </button>
+            <button
+              type="button"
+              onClick={async () => showEdgeResult(await api?.pocMap?.addRoute?.(), "Route")}
+              className="flex-1 px-1.5 py-0.5 rounded border border-border/60 text-muted hover:text-text cursor-pointer bg-transparent"
+              title="Info → Route: drag the route systems into chat in order, copy the lines, press this"
+            >
+              Route from clipboard
+            </button>
+          </div>
+          <input
+            className="px-2 py-0.5 text-[10px] bg-bg/60 border border-border-input rounded text-text focus:outline-none"
+            placeholder="…or paste chat here (Ctrl+V)"
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            onPaste={async (e) => {
+              e.preventDefault();
+              showLinkResult(await api?.pocMap?.ingestText?.(e.clipboardData.getData("text")));
+              setPasteText("");
+            }}
+          />
+          {linkResult && <div className="text-[10px] text-muted break-words">{linkResult}</div>}
+        </div>
+
+        {/* POC: LogLite → map */}
+        <LogLiteFeed />
 
         {/* Zone quick-picker */}
         <div className="px-3 pb-2 flex flex-col gap-1">
@@ -235,5 +323,60 @@ export function ScoutOverlay() {
         )}
       </div>
     </OverlayFrame>
+  );
+}
+
+const FEED_COLORS: Partial<Record<string, string>> = {
+  "edge-added": "text-cyan-300",
+  "name-bound": "text-green-400",
+  system: "text-text",
+  disconnected: "text-amber-400",
+};
+
+/** POC: toggle for reading the game client's LogLite stream, plus its latest events. */
+function LogLiteFeed() {
+  const api = useEfOverlay();
+  const [status, setStatus] = useState<PocLogLiteStatus | null>(null);
+
+  const refresh = useCallback(async () => {
+    setStatus((await api?.pocMap?.getLogLiteStatus?.()) ?? null);
+  }, [api]);
+
+  useEffect(() => {
+    void refresh();
+    const t = setInterval(() => void refresh(), 1500);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  if (!status) return null;
+  const on = status.state !== "off";
+  const stateText =
+    status.error ??
+    { off: "", listening: "waiting for client…", connected: "client connected", error: "error" }[status.state];
+
+  return (
+    <div className="px-3 pb-2 flex flex-col gap-0.5 text-[10px]">
+      <div className="flex items-center gap-1.5">
+        <span className={status.state === "connected" ? "text-green-400" : status.state === "error" ? "text-red-400" : "text-muted"}>
+          {on ? `LogLite: ${stateText}` : "LogLite: off"}
+        </span>
+        <button
+          type="button"
+          onClick={async () => {
+            await api?.pocMap?.setLogLite?.(!on);
+            await refresh();
+          }}
+          className="ml-auto px-1.5 py-0.5 rounded border border-border/60 text-muted hover:text-text cursor-pointer bg-transparent"
+          title="Read the game client's debug log instead of LogLite (port 3273): jumps add map connections"
+        >
+          {on ? "Stop LogLite" : "Read LogLite"}
+        </button>
+      </div>
+      {status.feed.slice(0, 5).map((f, i) => (
+        <div key={`${f.at}-${i}`} className={`truncate ${FEED_COLORS[f.kind] ?? "text-muted"}`} title={f.text}>
+          {f.text}
+        </div>
+      ))}
+    </div>
   );
 }
