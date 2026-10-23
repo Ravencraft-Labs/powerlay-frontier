@@ -12,7 +12,7 @@ function getIconsBaseUrlOnce(): Promise<string> {
   return iconsBaseUrlPromise;
 }
 
-function useIconsBaseUrl(): string {
+export function useIconsBaseUrl(): string {
   const [baseUrl, setBaseUrl] = useState("");
   useEffect(() => {
     getIconsBaseUrlOnce().then(setBaseUrl);
@@ -24,11 +24,44 @@ export interface ItemIconProps {
   typeID: number;
   size?: number;
   className?: string;
-  /** Shown when icon fails to load. If omitted, renders nothing on failure. */
+  /** Shown when icon fails to load. If omitted, renders a default placeholder (×). */
   fallback?: React.ReactNode;
 }
 
-/** Renders a small icon for a typeID. On error, shows fallback if provided, else nothing. */
+/** Inline placeholder rendered when a typeID has no icon on disk. */
+function MissingIconPlaceholder({ size, className }: { size: number; className: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="no icon"
+      className={`inline-block flex-shrink-0 align-middle text-muted ${className}`}
+    >
+      <rect
+        x="2"
+        y="2"
+        width="20"
+        height="20"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        opacity="0.35"
+      />
+      <path
+        d="M7 7 L17 17 M17 7 L7 17"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+    </svg>
+  );
+}
+
+/** Renders a small icon for a typeID. On error, shows fallback if provided, else a × placeholder. */
 export function ItemIcon({ typeID, size = 20, className = "", fallback }: ItemIconProps) {
   const baseUrl = useIconsBaseUrl();
   const [failed, setFailed] = useState(false);
@@ -37,7 +70,19 @@ export function ItemIcon({ typeID, size = 20, className = "", fallback }: ItemIc
     setFailed(false);
   }, [typeID]);
 
-  if (!baseUrl || failed) {
+  // Wait for the base URL to resolve before deciding what to render — otherwise
+  // we'd flash the placeholder before the real <img> ever gets a chance.
+  if (!baseUrl) {
+    return (
+      <span
+        aria-hidden
+        className={`inline-block flex-shrink-0 align-middle ${className}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  if (failed) {
     if (fallback != null) {
       return (
         <span
@@ -55,7 +100,7 @@ export function ItemIcon({ typeID, size = 20, className = "", fallback }: ItemIc
         </span>
       );
     }
-    return null;
+    return <MissingIconPlaceholder size={size} className={className} />;
   }
 
   const src = `${baseUrl.replace(/\/?$/, "/")}${typeID}.png`;

@@ -11,6 +11,8 @@ import { startAuthServer } from "./auth/authServer.js";
 import { registerAuthHandlers } from "./ipc/authHandlers.js";
 import { registerTribeHandlers } from "./ipc/tribeHandlers.js";
 import { registerScoutHandlers } from "./ipc/scoutHandlers.js";
+import { registerPocMapHandlers } from "./ipc/pocMapHandlers.js";
+import { loadPlugins, registerPluginHandlers } from "./plugins/pluginHost.js";
 import { registerStorageHandlers } from "./ipc/storageHandlers.js";
 import { getDataRoot } from "./ipc/gameDataLoader.js";
 import { loadSettings, saveSettings } from "./ipc/settingsStore.js";
@@ -22,9 +24,10 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-type OverlayFrame = "contracts" | "builder" | "scout";
+/** "map" (POC) is the mini-map: same overlay mechanics, but rendered by the desktop renderer (?view=minimap). */
+type OverlayFrame = "contracts" | "builder" | "scout" | "map";
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false, map: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -56,7 +59,7 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["contracts", "builder", "scout"] as OverlayFrame[]) {
+    for (const f of ["contracts", "builder", "scout", "map"] as OverlayFrame[]) {
       let b = data[f];
       if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
@@ -110,6 +113,32 @@ function saveOverlayBounds(bounds: Partial<Record<OverlayFrame, OverlayBounds>>)
     }
     const merged = { ...existing, ...bounds };
     fs.writeFileSync(p, JSON.stringify(merged, null, 0), "utf-8");
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Sizes the user set with an overlay's resize grip, by bounds key ("scout", "builder-<id>", ...).
+ * Without an entry the overlay sizes itself to its content.
+ */
+const OVERLAY_SIZES_FILE = "overlay-sizes.json";
+
+function overlaySizeKey(frame: OverlayFrame, buildId?: string): string {
+  return frame === "builder" && buildId ? `builder-${buildId}` : frame;
+}
+
+function loadOverlaySizes(): Record<string, { width: number; height: number }> {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(path.dirname(getOverlayBoundsPath()), OVERLAY_SIZES_FILE), "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveOverlaySizes(sizes: Record<string, { width: number; height: number }>): void {
+  try {
+    fs.writeFileSync(path.join(path.dirname(getOverlayBoundsPath()), OVERLAY_SIZES_FILE), JSON.stringify(sizes), "utf-8");
   } catch {
     /* ignore */
   }
@@ -218,13 +247,34 @@ function createMainWindow(): void {
   });
 }
 
+/**
+ * macOS: a fullscreen game runs in its own Space, and always-on-top alone doesn't follow it there.
+ * Join every Space, including fullscreen ones. Electron briefly switches the app's activation
+ * policy to do this, so the Dock icon may blink once.
+ */
+function showOverFullscreenApps(w: BrowserWindow): void {
+  if (process.platform !== "darwin") return;
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  w.setFullScreenable(false);
+}
+
+/**
+ * Windows: clicking a focusable overlay activates it, and a fullscreen game minimizes when it loses focus.
+ * Non-focusable overlays still take clicks without stealing focus, but their text inputs can't be typed into.
+ */
+function keepGameFocused(w: BrowserWindow): void {
+  if (process.platform !== "win32") return;
+  w.setFocusable(false);
+}
+
 function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   let w = overlayWindows[frame];
   if (w && !w.isDestroyed()) return w;
   const savedBounds = loadOverlayBounds()[frame];
   const opts: Electron.BrowserWindowConstructorOptions = {
-    width: 320,
-    height: 300,
+    // Other overlays size themselves to their content; the map keeps the size it was given.
+    width: frame === "map" ? savedBounds?.width ?? 320 : 320,
+    height: frame === "map" ? savedBounds?.height ?? 300 : 300,
     x: savedBounds?.x,
     y: savedBounds?.y,
     frame: false,
@@ -242,6 +292,8 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   w = new BrowserWindow(opts);
   // Use highest Z-order level to improve overlay staying on top (helps on some Windows setups)
   w.setAlwaysOnTop(true, "screen-saver");
+  showOverFullscreenApps(w);
+  keepGameFocused(w);
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = () => {
     if (saveTimeout) clearTimeout(saveTimeout);
@@ -254,6 +306,7 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
     }, 300);
   };
   w.on("move", scheduleSave);
+  if (frame === "map") w.on("resize", scheduleSave); // the map's size is user-set; other overlays fit content
   w.on("close", () => {
     if (w && !w.isDestroyed()) {
       const b = w.getBounds();
@@ -271,14 +324,29 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   w.hide();
   overlayWindows[frame] = w;
 
-  const base = getOverlayBaseUrl();
+  const base = frame === "map" ? getDesktopUrl() : getOverlayBaseUrl();
+  const query: Record<string, string> = frame === "map" ? { view: "minimap" } : { frame };
   if (base.startsWith("http://") || base.startsWith("https://")) {
     const sep = base.includes("?") ? "&" : "?";
-    w.loadURL(`${base}${sep}frame=${frame}`);
+    w.loadURL(`${base}${sep}${new URLSearchParams(query)}`);
   } else {
-    w.loadFile(base, { query: { frame } });
+    w.loadFile(base, { query });
   }
   return w;
+}
+
+const MAP_GAP = 8;
+
+/** POC: first time the map opens (no saved position), put it left of the Scout overlay, sized like it. */
+function placeMapNextToScout(w: BrowserWindow): void {
+  const scout = overlayWindows.scout;
+  if (!scout || scout.isDestroyed() || !scout.isVisible()) return;
+  const b = scout.getBounds();
+  const workArea = screen.getDisplayMatching(b).workArea;
+  // Flip to the right of Scout when there's no room on the left.
+  let x = b.x - b.width - MAP_GAP;
+  if (x < workArea.x) x = b.x + b.width + MAP_GAP;
+  w.setBounds({ x, y: b.y, width: b.width, height: b.height });
 }
 
 function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
@@ -337,6 +405,8 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
   };
   w = new BrowserWindow(opts);
   w.setAlwaysOnTop(true, "screen-saver");
+  showOverFullscreenApps(w);
+  keepGameFocused(w);
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = () => {
     if (saveTimeout) clearTimeout(saveTimeout);
@@ -377,8 +447,9 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
 }
 
 function registerAppProtocol(): void {
-  const root = getDataRoot();
-  const iconsDir = path.join(root, "data", "raw", "icons");
+  // Packaged: icons ship inside app.asar ("files" in package.json), not in resources/ with the other data.
+  // Dev: the app path is packages/electron-shell, so take the repo root from getDataRoot().
+  const iconsDir = path.join(app.isPackaged ? app.getAppPath() : getDataRoot(), "data", "raw", "icons");
   protocol.handle("app", (request) => {
     const u = new URL(request.url);
     if (u.hostname !== "icons" || !u.pathname.startsWith("/")) {
@@ -415,6 +486,9 @@ app.whenReady().then(async () => {
   });
   registerTribeHandlers();
   registerScoutHandlers();
+  registerPocMapHandlers();
+  registerPluginHandlers();
+  loadPlugins();
   registerStorageHandlers(authServer);
 
   ipcMain.handle("app:open-log-folder", async () => {
@@ -518,7 +592,9 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("overlay:toggle", (_event, frame: OverlayFrame) => {
   if (frame === "builder") return;
+  const firstMapOpen = frame === "map" && !overlayWindows.map && !loadOverlayBounds().map;
   const w = getOrCreateOverlayWindow(frame);
+  if (firstMapOpen) placeMapNextToScout(w);
   if (w.isVisible()) w.hide();
   else w.show();
 });
@@ -591,6 +667,23 @@ ipcMain.on("overlay:set-content-size", (_event, frame: OverlayFrame, width: numb
   if (w && !w.isDestroyed() && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
     w.setContentSize(Math.round(width), Math.round(height));
   }
+});
+
+ipcMain.handle("overlay:get-user-size", (_event, frame: OverlayFrame, buildId?: string) => {
+  return loadOverlaySizes()[overlaySizeKey(frame, buildId)] ?? null;
+});
+
+ipcMain.handle("overlay:set-user-size", (_event, frame: OverlayFrame, width: number, height: number, buildId?: string) => {
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+  const sizes = loadOverlaySizes();
+  sizes[overlaySizeKey(frame, buildId)] = { width: Math.round(width), height: Math.round(height) };
+  saveOverlaySizes(sizes);
+});
+
+ipcMain.handle("overlay:clear-user-size", (_event, frame: OverlayFrame, buildId?: string) => {
+  const sizes = loadOverlaySizes();
+  delete sizes[overlaySizeKey(frame, buildId)];
+  saveOverlaySizes(sizes);
 });
 
 ipcMain.handle("overlay:toggle-lock", (_event, frame: OverlayFrame, buildId?: string) => {

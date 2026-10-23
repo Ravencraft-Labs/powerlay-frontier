@@ -93,7 +93,12 @@ pnpm lint
 
 ## Game data (required for Builder features)
 
-The `data/` folder is in `.gitignore` (game data is large and not shared publicly). Developers need to obtain these files and place them as follows:
+The `data/` folder is in `.gitignore` (game data is large and not shared publicly). Two ways to populate it:
+
+1. **Automatic extraction from a local EVE Frontier install** — see *Static data extraction* below. Recommended; produces every raw file in one go.
+2. **Drop files manually** — describe the files yourself, as documented in the table below.
+
+
 
 | File | Directory | Required | Notes |
 |------|-----------|----------|-------|
@@ -123,6 +128,39 @@ data/
 
 Without these files, the Builder tab will show a "Types loaded but empty" or "File not found" error.
 
+### Static data extraction
+
+A Python 3.12 pipeline at `scripts/extract/` reads the installed EVE Frontier client and produces every file in `data/raw/`. macOS and Windows both supported.
+
+**One-time setup** (Python 3.12 must be on PATH):
+
+```bash
+cd scripts/extract
+python3.12 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+```
+
+**Routine flow before a release** — from the repo root:
+
+```bash
+pnpm update-static-data --build stillness   # extract → validate → promote (interactive)
+pnpm strip-data                              # populate data/stripped/ for the app
+```
+
+`update-static-data` writes a timestamped run to `data/extracted/<build>-<server>-<ts>/`, validates it, asks before moving the previous `data/raw/` to `data/raw.bak.<ts>/`, and promotes the new files in. Pass `--yes` to skip the confirmation. `--build` accepts `stillness` or `utopia`.
+
+**Individual stages** (for debugging or partial runs):
+
+```bash
+pnpm extract:discover --build stillness --out /tmp/d.json   # inventory client resources
+pnpm extract:run --build stillness                          # extract all targets → run-dir
+pnpm extract:run --build stillness --target types --target groups
+pnpm extract:validate data/extracted/<run-dir>              # writes validation-report.json
+pnpm extract:promote data/extracted/<run-dir>               # gated by validation pass
+```
+
+See `docs/static-data-extraction.md` for the full operator guide and `docs/superpowers/specs/2026-06-06-static-data-extraction-pipeline-design.md` for the architecture.
+
 ## Scripts
 
 - **`pnpm dev`** — Start desktop UI (Vite :5173), overlay UI (Vite :5174), then Electron. Use "Toggle overlay" in the desktop to show/hide the overlay.
@@ -132,6 +170,11 @@ Without these files, the Builder tab will show a "Types loaded but empty" or "Fi
 - **`pnpm test`** — Run tests (core package).
 - **`pnpm lint`** — Lint all packages.
 - **`pnpm strip-data`** — Generate `data/stripped/types.json`, `data/stripped/oreGroupIDs.json`, and optionally `data/stripped/solarsystems.json` and `data/stripped/structure_recipes.json` from `data/raw/`. Requires `types.json` and `groups.json`. Run after placing fresh game data. See `data/raw/README.md` for full schema and file details.
+- **`pnpm update-static-data --build {stillness,utopia} [--yes]`** — End-to-end: extract from local EVE Frontier install, validate, promote into `data/raw/`. See *Static data extraction* above for one-time setup. Append `--yes` to skip the promote confirmation.
+- **`pnpm extract:discover --build {stillness,utopia} [--out PATH] [--probe RES_PATH]`** — Inventory client resources and loaders (no extraction).
+- **`pnpm extract:run --build {stillness,utopia} [--target NAME ...]`** — Extract one or more targets into `data/extracted/<run-dir>/`. Omit `--target` for all.
+- **`pnpm extract:validate <run-dir>`** — Validate a run-dir; writes `validation-report.json`. Required gate before promote.
+- **`pnpm extract:promote <run-dir>`** — Copy a validated run-dir into `data/raw/`, with backup rotation.
 - **`pnpm debug-graphql`** — Inspect GraphQL + optional `chainIdentifier` / Frontier package checks; resolves **`tribe_id`** like the app (`PlayerProfile` → `Character`, profile pick Utopia → Stillness → first). `pnpm debug-graphql -- <address> [url]`. Optional **`POWERLAY_EF_WORLD_API_BASE`** mirrors the app’s operator override for World API. See `docs/contracts-integration.md`.
 
 ## Structure

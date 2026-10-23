@@ -2,26 +2,28 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { ContractsSection } from "./components/contracts/ContractsSection";
 import { BuildMiningSection } from "./components/BuildMiningSection";
 import { ScoutSection } from "./components/ScoutSection";
+import { MapPocSection } from "./components/MapPocSection";
 import { SettingsModal, SettingsCogButton } from "./components/SettingsModal";
 import { LogLocateModal } from "./components/LogLocateModal";
 import { AuthProvider } from "./context/AuthContext";
 import { ContractsAccessProvider } from "./context/ContractsAccessContext";
 import { WalletLoginButton } from "./components/WalletLoginButton";
 
-type TabId = "contracts" | "builder" | "scout";
+type TabId = "contracts" | "builder" | "scout" | "map";
 
 const TAB_LABELS: Record<TabId, string> = {
   contracts: "Contracts",
   builder: "Builder",
   scout: "Scout",
+  map: "Map (POC)",
 };
 
-const DEFAULT_TAB_ORDER: TabId[] = ["contracts", "builder", "scout"];
+const DEFAULT_TAB_ORDER: TabId[] = ["contracts", "builder", "scout", "map"];
 const STORAGE_ORDER_KEY = "powerlay:main-tab-order";
 const STORAGE_ACTIVE_KEY = "powerlay:main-active-tab";
 
 function isTabId(x: unknown): x is TabId {
-  return x === "contracts" || x === "builder" || x === "scout";
+  return x === "contracts" || x === "builder" || x === "scout" || x === "map";
 }
 
 function loadTabOrder(): TabId[] {
@@ -33,6 +35,10 @@ function loadTabOrder(): TabId[] {
     let ids = parsed.filter(isTabId) as TabId[];
     if (ids.length === DEFAULT_TAB_ORDER.length && new Set(ids).size === DEFAULT_TAB_ORDER.length) {
       return ids;
+    }
+    // POC: saved order predates the Map tab — append it
+    if (ids.length === DEFAULT_TAB_ORDER.length - 1 && !ids.includes("map") && new Set(ids).size === ids.length) {
+      return [...ids, "map"];
     }
     // Legacy: only contracts + builder saved — insert Scout after Builder
     if (
@@ -179,6 +185,11 @@ export default function App() {
               </div>
             )}
             {activeTab === "scout" && <ScoutSection />}
+            {activeTab === "map" && (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <MapPocSection />
+              </div>
+            )}
             {activeTab === "contracts" && <ContractsSection />}
           </main>
           <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />

@@ -9,8 +9,23 @@ dist/
 # Move build output
 packages/move/**/build/
 
-# Raw game data (large; keep local)
-data/
+# Local user plugins (never shipped or committed)
+/plugins/
+
+# Raw game data (large; keep local), except the Map POC base layer: Cycle 6 system positions
+# from our own client extraction (scripts/poc-map/build-base.mjs), needed in packaged builds.
+/data/*
+!/data/poc-map/
+/data/poc-map/*
+!/data/poc-map/base.json
+
+# Python venv for static data extractor
+scripts/extract/.venv/
+scripts/extract/**/__pycache__/
+scripts/extract/*.egg-info/
+scripts/extract/.pytest_cache/
+
+# Extracted runs (raw is already ignored via data/)
 
 # Cursor / IDE
 .cursorrules
@@ -30,6 +45,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.envrc
 
 # Electron
 out/
@@ -39,3 +55,13 @@ release/
 /*.sh
 
 CLAUDE.md
+tasks.md
+.claude-memory
+
+# test files
+_*
+
+# Python dunder files in scripts/extract/ (override the `_*` rule above)
+!scripts/extract/**/__init__.py
+!scripts/extract/**/__main__.py
+!scripts/extract/**/_cfsd.py

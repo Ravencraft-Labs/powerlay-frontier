@@ -46,19 +46,25 @@ contextBridge.exposeInMainWorld("efOverlay", {
     delete: (id: string) => ipcRenderer.invoke("builds:delete", id),
   },
   overlay: {
-    setContentSize: (frame: "contracts" | "builder" | "scout", width: number, height: number, buildId?: string) =>
+    setContentSize: (frame: "contracts" | "builder" | "scout" | "map", width: number, height: number, buildId?: string) =>
       ipcRenderer.send("overlay:set-content-size", frame, width, height, buildId),
-    toggle: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:toggle", frame),
+    toggle: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:toggle", frame),
     toggleBuilder: (buildId: string) => ipcRenderer.invoke("overlay:toggle-builder", buildId),
     getVisibleBuilderIds: () => ipcRenderer.invoke("overlay:get-visible-builder-ids") as Promise<string[]>,
-    getVisible: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:get-visible", frame),
-    show: (frame: "contracts" | "builder" | "scout") => ipcRenderer.invoke("overlay:show", frame),
-    hide: (frame: "contracts" | "builder" | "scout", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
+    getVisible: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:get-visible", frame),
+    show: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:show", frame),
+    hide: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
     hideBuilder: (buildId: string) => ipcRenderer.invoke("overlay:hide-builder", buildId),
-    getLockState: (frame: "contracts" | "builder" | "scout", buildId?: string) =>
+    getLockState: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
       ipcRenderer.invoke("overlay:get-lock-state", frame, buildId),
-    toggleLock: (frame: "contracts" | "builder" | "scout", buildId?: string) =>
+    toggleLock: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
       ipcRenderer.invoke("overlay:toggle-lock", frame, buildId),
+    getUserSize: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+      ipcRenderer.invoke("overlay:get-user-size", frame, buildId),
+    setUserSize: (frame: "contracts" | "builder" | "scout" | "map", width: number, height: number, buildId?: string) =>
+      ipcRenderer.invoke("overlay:set-user-size", frame, width, height, buildId),
+    clearUserSize: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+      ipcRenderer.invoke("overlay:clear-user-size", frame, buildId),
     getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) =>
       ipcRenderer.send("overlay:set-builder-state", states),
@@ -86,6 +92,7 @@ contextBridge.exposeInMainWorld("efOverlay", {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
     }) =>
       ipcRenderer.invoke("settings:set", settings),
   },
@@ -119,6 +126,24 @@ contextBridge.exposeInMainWorld("efOverlay", {
     startWatching: () => ipcRenderer.invoke("scout:start-watching"),
     stopWatching: () => ipcRenderer.invoke("scout:stop-watching"),
     getActivityLog: (limit?: number) => ipcRenderer.invoke("scout:get-activity-log", limit),
+  },
+  pocMap: {
+    getBase: () => ipcRenderer.invoke("pocMap:get-base"),
+    setLogLite: (on: boolean) => ipcRenderer.invoke("pocMap:loglite-set", on),
+    getLogLiteStatus: () => ipcRenderer.invoke("pocMap:loglite-status"),
+    watchClipboard: (on: boolean) => ipcRenderer.invoke("pocMap:watch-clipboard", on),
+    getLinks: () => ipcRenderer.invoke("pocMap:get-links"),
+    ingestText: (text: string) => ipcRenderer.invoke("pocMap:ingest-text", text),
+    ingestClipboard: () => ipcRenderer.invoke("pocMap:ingest-clipboard"),
+    addAdjacent: (anchorId: number | null, text?: string) => ipcRenderer.invoke("pocMap:add-adjacent", anchorId, text),
+    addRoute: (text?: string) => ipcRenderer.invoke("pocMap:add-route", text),
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke("plugins:list"),
+    dir: () => ipcRenderer.invoke("plugins:dir"),
+    setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("plugins:set-enabled", id, enabled),
+    rendererSource: (id: string) => ipcRenderer.invoke("plugins:renderer-source", id),
+    invoke: (id: string, channel: string, ...args: unknown[]) => ipcRenderer.invoke("plugins:invoke", id, channel, ...args),
   },
   getIconsBaseUrl: () => Promise.resolve("app://icons/"),
 });

@@ -10,7 +10,8 @@ const OUTPUT_DIR = path.join(process.cwd(), "data", "stripped");
 function isOreGroup(name) {
   const n = (name || "").trim();
   if (!n) return false;
-  return n.toLowerCase() === "ice" || /\sores?$/i.test(n);
+  // "Regoliths" groups replaced the "* Ores" groups in the Oct 2026 client update.
+  return n.toLowerCase() === "ice" || /\s(ores?|regoliths?)$/i.test(n);
 }
 
 // --- Types ---
@@ -88,9 +89,24 @@ if (fs.existsSync(solarsystemsInputPath)) {
   console.log("solarsystems.json: skipped (file not found)");
 }
 
-// --- Structure recipes (assemblyConstruction from spacecomponentsbytype) ---
+// --- Structure recipes (from spacecomponentsbytype) ---
+// Current clients: smartDeployable.constructionCost on the structure type itself.
+// Pre-Oct-2026 clients: assemblyConstruction { constructedItem, inputItems } on the kit type.
 const spacecomponentsInputPath = path.join(RAW_DIR, "spacecomponentsbytype.json");
 const structureRecipesOutputPath = path.join(OUTPUT_DIR, "structure_recipes.json");
+
+function toInputItems(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const inputItems = {};
+  for (const [typeIdStr, qty] of Object.entries(raw)) {
+    const typeId = parseInt(typeIdStr, 10);
+    const q = Number(qty);
+    if (Number.isFinite(typeId) && Number.isFinite(q) && q > 0) {
+      inputItems[typeIdStr] = q;
+    }
+  }
+  return Object.keys(inputItems).length > 0 ? inputItems : null;
+}
 
 let structureRecipes = {};
 if (fs.existsSync(spacecomponentsInputPath)) {
@@ -98,20 +114,23 @@ if (fs.existsSync(spacecomponentsInputPath)) {
   if (rawSpacecomponents && typeof rawSpacecomponents === "object") {
     for (const key of Object.keys(rawSpacecomponents)) {
       const entry = rawSpacecomponents[key];
+
       const ac = entry?.assemblyConstruction;
-      if (!ac || ac.constructedItem == null || !ac.inputItems || typeof ac.inputItems !== "object") continue;
-      const constructedItem = Number(ac.constructedItem);
-      if (!Number.isFinite(constructedItem)) continue;
-      const inputItems = {};
-      for (const [typeIdStr, qty] of Object.entries(ac.inputItems)) {
-        const typeId = parseInt(typeIdStr, 10);
-        const q = Number(qty);
-        if (Number.isFinite(typeId) && Number.isFinite(q) && q > 0) {
-          inputItems[typeIdStr] = q;
+      if (ac && ac.constructedItem != null) {
+        const constructedItem = Number(ac.constructedItem);
+        const inputItems = toInputItems(ac.inputItems);
+        if (Number.isFinite(constructedItem) && inputItems) {
+          structureRecipes[String(constructedItem)] ??= { constructedItem, inputItems };
         }
       }
-      if (Object.keys(inputItems).length > 0) {
-        structureRecipes[String(constructedItem)] = { constructedItem, inputItems };
+
+      const sd = entry?.smartDeployable;
+      if (sd && sd.constructionCost) {
+        const constructedItem = parseInt(key, 10);
+        const inputItems = toInputItems(sd.constructionCost);
+        if (Number.isFinite(constructedItem) && inputItems) {
+          structureRecipes[String(constructedItem)] = { constructedItem, inputItems };
+        }
       }
     }
   }

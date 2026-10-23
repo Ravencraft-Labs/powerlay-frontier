@@ -1,0 +1,23 @@
+[project]
+name = "powerlay-extract"
+version = "0.1.0"
+description = "EVE Frontier static data extractor"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["extract*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

@@ -28,9 +28,13 @@ export interface BuilderOverlayState {
   plannedVolByTypeId?: Record<number, number>;
 }
 
-export type OverlayShellFrame = "contracts" | "builder" | "scout";
+/** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map";
 
 export interface EFOverlayAPI {
+  settings?: {
+    get: () => Promise<{ overlayOpacity?: number }>;
+  };
   contracts?: {
     search: (params: SearchContractsParams) => Promise<ContractBrowseSummary[]>;
     listMyContracts: (bucket?: string) => Promise<ContractBrowseSummary[]>;
@@ -65,6 +69,7 @@ export interface EFOverlayAPI {
     hideBuilder: (buildId: string) => Promise<void>;
     getLockState?: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     getVisible?: (frame: OverlayShellFrame) => Promise<boolean>;
+    toggle?: (frame: OverlayShellFrame) => Promise<void>;
   };
   mining?: {
     getErrors: () => Promise<{ tailerTestError?: string; logReaderError?: string; trackingActive?: boolean; trackingBuildId?: string | null }>;
@@ -86,10 +91,56 @@ export interface EFOverlayAPI {
     startWatching: () => Promise<void>;
     stopWatching: () => Promise<void>;
   };
+  /** POC (throwaway): chat link → system ID capture, shared with the desktop Map tab. */
+  pocMap?: {
+    getLinks: () => Promise<{ links: PocSystemLink[]; edges: PocEdge[]; currentSystemId: number | null }>;
+    ingestText: (text: string) => Promise<PocSystemLink[]>;
+    ingestClipboard: () => Promise<PocSystemLink[]>;
+    addAdjacent: (anchorId: number | null, text?: string) => Promise<PocEdgeResult>;
+    addRoute: (text?: string) => Promise<PocEdgeResult>;
+    setLogLite: (on: boolean) => Promise<unknown>;
+    getLogLiteStatus: () => Promise<PocLogLiteStatus>;
+  };
+}
+
+export interface PocEdge {
+  a: number;
+  b: number;
+  source: "adjacent" | "route" | "jump";
+  gateId?: number;
+  at: string;
+}
+
+export interface PocEdgeResult {
+  anchorId?: number | null;
+  ingested: PocSystemLink[];
+  added: PocEdge[];
+  error?: string;
+}
+
+export interface PocSystemLink {
+  id: number;
+  name: string | null;
+  linkTexts: string[];
+  source: "current-system" | "link-text" | "prefix-only" | "loglite";
+  at: string;
 }
 
 declare global {
   interface Window {
     efOverlay?: EFOverlayAPI;
   }
+}
+
+export interface PocLogLiteFeedItem {
+  at: string;
+  kind: "connected" | "disconnected" | "system" | "jump" | "edge-added" | "edge-known" | "name-bound" | "warp";
+  text: string;
+}
+
+export interface PocLogLiteStatus {
+  state: "off" | "listening" | "connected" | "error";
+  error: string | null;
+  currentSystemId: number | null;
+  feed: PocLogLiteFeedItem[];
 }

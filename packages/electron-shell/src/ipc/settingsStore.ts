@@ -29,6 +29,12 @@ export interface AppSettings {
   contractsApiBase?: string;
   /** Storage backend base URL including `/api/v1`. */
   storageApiBase?: string;
+  /** Overlay background opacity, 0–100. Default 92. */
+  overlayOpacity?: number;
+  /** Mini-map window background opacity, 0–100. Unset = same as `overlayOpacity`. */
+  miniMapOpacity?: number;
+  /** Ids of local plugins switched off in Settings. */
+  disabledPlugins?: string[];
 }
 
 const DEFAULT_GAME_LOG_DIR =
@@ -41,6 +47,7 @@ const defaults: AppSettings = {
   worldContractsPackageId: DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS,
   contractsApiBase: DEFAULT_CONTRACTS_API_BASE_STILLNESS,
   storageApiBase: DEFAULT_STORAGE_API_BASE_STILLNESS,
+  overlayOpacity: 92,
 };
 
 export function loadSettings(): AppSettings {

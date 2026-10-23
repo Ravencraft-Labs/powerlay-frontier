@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { usePluginRegistry } from "../plugins/PluginsProvider";
 
 const WORLD_PACKAGE_STILLNESS = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
 const WORLD_PACKAGE_UTOPIA = "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
@@ -59,6 +60,55 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
+function PluginsSettings({ sectionCls }: { sectionCls: string }) {
+  const { installed, setEnabled } = usePluginRegistry();
+  const [dir, setDir] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void window.efOverlay?.plugins?.dir().then(setDir);
+  }, []);
+
+  return (
+    <section className={sectionCls}>
+      <h3 className="text-sm font-semibold text-text mb-2">Plugins</h3>
+      <p className="text-xs text-muted mb-2">
+        Local plugins from{" "}
+        <code className="px-1 py-0.5 rounded bg-bg/80 text-xs break-all">{dir ?? "…"}</code>. Changes apply immediately.
+      </p>
+      {installed.length === 0 && <p className="text-xs text-muted">No plugins installed.</p>}
+      <div className="space-y-2">
+        {installed.map((p) => (
+          <div key={p.id}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={p.enabled}
+                disabled={busyId === p.id}
+                onChange={async (e) => {
+                  setBusyId(p.id);
+                  try {
+                    await setEnabled(p.id, e.target.checked);
+                  } finally {
+                    setBusyId(null);
+                  }
+                }}
+                className="rounded border-border-input"
+              />
+              <span className="text-sm text-text">{p.name}</span>
+              <span className="text-xs text-muted">
+                {p.id}
+                {p.version ? ` · v${p.version}` : ""}
+              </span>
+            </label>
+            {p.enabled && p.error && <p className="text-xs text-red-400 mt-1 ml-6 break-all">{p.error}</p>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -68,6 +118,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [gameLogDir, setGameLogDir] = useState("");
   const [skipLogPrompt, setSkipLogPrompt] = useState(false);
   const [backendEnvironment, setBackendEnvironment] = useState<BackendEnvironment>("stillness");
+  const [overlayOpacity, setOverlayOpacity] = useState(92);
+  const [miniMapOpacity, setMiniMapOpacity] = useState(92);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -75,6 +127,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       window.efOverlay.settings.get().then((s) => {
         setGameLogDir(s.gameLogDir ?? "");
         setSkipLogPrompt(s.skipLogPrompt ?? false);
+        setOverlayOpacity(s.overlayOpacity ?? 92);
+        setMiniMapOpacity(s.miniMapOpacity ?? s.overlayOpacity ?? 92);
         setBackendEnvironment(
           environmentPresetFromValues(
             (s.worldContractsPackageId ?? WORLD_PACKAGE_STILLNESS).trim(),
@@ -94,6 +148,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       worldContractsPackageId: preset.worldContractsPackageId,
       contractsApiBase: preset.contractsApiBase,
       storageApiBase: preset.storageApiBase,
+      overlayOpacity,
+      miniMapOpacity,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -201,6 +257,48 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </button>
           </div>
         </section>
+
+        <section className={sectionCls}>
+          <h3 className="text-sm font-semibold text-text mb-2">Overlay</h3>
+          <p className="text-xs text-muted mb-3">Background opacity of the overlay windows and of the map window next to Scout.</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-muted text-xs">Opacity</label>
+              <span className="text-sm text-text tabular-nums">{overlayOpacity}%</span>
+            </div>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              step={5}
+              value={overlayOpacity}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <div className="flex items-center justify-between">
+              <label className="text-muted text-xs">Map window opacity</label>
+              <span className="text-sm text-text tabular-nums">{miniMapOpacity}%</span>
+            </div>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              step={5}
+              value={miniMapOpacity}
+              onChange={(e) => setMiniMapOpacity(Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-md border border-border-input bg-border text-text text-sm hover:bg-surface"
+              onClick={handleSave}
+            >
+              {saved ? "Saved" : "Save"}
+            </button>
+          </div>
+        </section>
+
+        <PluginsSettings sectionCls={sectionCls} />
 
         <section className={sectionCls}>
           <h3 className="text-sm font-semibold text-text mb-2">Powerlay logs</h3>

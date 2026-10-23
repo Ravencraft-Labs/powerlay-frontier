@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-type OverlayFrame = "contracts" | "builder" | "scout";
+import type { OverlayShellFrame as OverlayFrame } from "../preload";
 
 function LockClosedIcon({ className }: { className?: string }) {
   return (

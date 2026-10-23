@@ -7,6 +7,7 @@ import {
   totalVolumeFromMaterials,
 } from "@powerlay/core";
 import type { GameData } from "../preload";
+import { formatProductionTime } from "../utils/format";
 import { BuildPage } from "./BuildPage";
 
 function EditIcon({ className }: { className?: string }) {
@@ -25,10 +26,13 @@ function CheckIcon({ className }: { className?: string }) {
   );
 }
 
-function CloseIcon({ className }: { className?: string }) {
+function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6L6 18M6 6l12 12" />
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
     </svg>
   );
 }
@@ -528,13 +532,6 @@ export function BuildMiningSection() {
       if (total <= 0) return;
       setTimerState((prev) => {
         const next = { ...prev };
-        for (const id of Object.keys(next)) {
-          if (next[id]?.status === "running") {
-            const s = next[id]!;
-            const elapsed = s.pausedElapsedSeconds + (Date.now() - s.startedAt) / 1000;
-            next[id] = { ...s, status: "paused", pausedElapsedSeconds: elapsed, startedAt: 0 };
-          }
-        }
         next[build.id] = {
           buildId: build.id,
           status: "running",
@@ -773,11 +770,18 @@ export function BuildMiningSection() {
                     }}
                     title="Delete build"
                   >
-                    <CloseIcon />
+                    <TrashIcon />
                   </button>
                 </div>
                 {(showOreBar || showProdBar) && (
                   <div className="px-4 pb-2 space-y-1.5">
+                    {showProdBar && (
+                      <p className="text-xs text-muted m-0">
+                        {isFinished
+                          ? "Done"
+                          : formatProductionTime(Math.max(0, totalTime - prodElapsed)) + " left"}
+                      </p>
+                    )}
                     {showOreBar && (
                       <div className="h-1.5 rounded-full bg-amber-500/40 overflow-hidden">
                         <div
