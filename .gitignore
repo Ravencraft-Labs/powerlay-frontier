@@ -12,8 +12,12 @@ packages/move/**/build/
 # Local user plugins (never shipped or committed)
 /plugins/
 
-# Raw game data (large; keep local)
-data/
+# Raw game data (large; keep local), except the Map POC base layer: Cycle 6 system positions
+# from our own client extraction (scripts/poc-map/build-base.mjs), needed in packaged builds.
+/data/*
+!/data/poc-map/
+/data/poc-map/*
+!/data/poc-map/base.json
 
 # Python venv for static data extractor
 scripts/extract/.venv/
