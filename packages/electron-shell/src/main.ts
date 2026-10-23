@@ -447,7 +447,9 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
 }
 
 function registerAppProtocol(): void {
-  const iconsDir = path.join(getDataRoot(), "data", "raw", "icons");
+  // Packaged: icons ship inside app.asar ("files" in package.json), not in resources/ with the other data.
+  // Dev: the app path is packages/electron-shell, so take the repo root from getDataRoot().
+  const iconsDir = path.join(app.isPackaged ? app.getAppPath() : getDataRoot(), "data", "raw", "icons");
   protocol.handle("app", (request) => {
     const u = new URL(request.url);
     if (u.hostname !== "icons" || !u.pathname.startsWith("/")) {
