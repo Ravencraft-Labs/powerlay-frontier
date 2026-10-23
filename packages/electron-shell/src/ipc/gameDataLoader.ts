@@ -260,6 +260,12 @@ export async function loadGameData(): Promise<GameData> {
       }
     }
   }
+  if (oreGroupIDs.length > 0) {
+    const oreGroupSet = new Set(oreGroupIDs);
+    for (const t of Object.values(typesResult.data)) {
+      if (oreGroupSet.has(t.groupID)) t.isOre = true;
+    }
+  }
 
   cached = {
     types: typesResult.data,

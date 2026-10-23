@@ -330,13 +330,14 @@ describe("tiered ore optimization", () => {
     expect(best?.blueprintTypeID).toBe(201);
   });
 
-  it("prefers tier 2 (common + rare ore name) over tier 3", () => {
+  it("prefers tier 2 (common + other ore) over tier 3", () => {
     const types = makeTypes([
       { typeID: productTypeID, name: "Product" },
       { typeID: commonOre, name: "Feldspar Crystals" },
       { typeID: 88888, name: "Something Matrix" },
       { typeID: 99999, name: "Drop Only Item" },
     ]);
+    types["88888"].isOre = true;
     const blueprints = makeBlueprints([
       {
         blueprintTypeID: 201,
@@ -384,6 +385,43 @@ describe("tiered ore optimization", () => {
     expect(options[0].isOptimized).toBe(true);
     expect(options[1].blueprintTypeID).toBe(202);
     expect(options[1].isOptimized).toBe(false);
+  });
+
+  it("treats ore with a byproduct recipe as mined, not crafted", () => {
+    const ore = 78446;
+    const salvage = 88764;
+    const types = makeTypes([
+      { typeID: productTypeID, name: "Tholin Aggregates" },
+      { typeID: ore, name: "Primitive Rime Shards" },
+      { typeID: salvage, name: "Salvaged Materials" },
+    ]);
+    types[String(ore)].isOre = true;
+    const blueprints = makeBlueprints([
+      {
+        blueprintTypeID: 201,
+        productTypeID,
+        productQty: 5,
+        materials: [{ typeID: ore, quantity: 1 }],
+      },
+      {
+        blueprintTypeID: 202,
+        productTypeID: ore,
+        productQty: 1,
+        materials: [{ typeID: salvage, quantity: 5 }],
+      },
+    ]);
+    const options = getBlueprintOptionsForProduct(productTypeID, blueprints, types);
+    expect(options[0].baseOrePerUnit).toBeCloseTo(0.2);
+
+    const trees = buildProductionTree([{ typeID: productTypeID, quantity: 10 }], blueprints, types);
+    expect(trees[0].children).toHaveLength(1);
+    expect(trees[0].children[0].typeID).toBe(ore);
+    expect(trees[0].children[0].children).toHaveLength(0);
+
+    const overridden = buildProductionTree([{ typeID: productTypeID, quantity: 10 }], blueprints, types, {
+      overrides: { [`0/${productTypeID}/${ore}`]: 202 },
+    });
+    expect(overridden[0].children[0].children[0].typeID).toBe(salvage);
   });
 });
 

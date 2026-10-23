@@ -12,6 +12,8 @@ export interface StrippedType {
   published?: number;
   capacity?: number;
   radius?: number;
+  /** Set by the game data loader for types whose groupID is in oreGroupIDs (mineable ore). */
+  isOre?: boolean;
   [key: string]: unknown;
 }
 

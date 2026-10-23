@@ -1,33 +1,27 @@
 import type { TypesMap, BlueprintsMap, StrippedType, Blueprint } from "./types.js";
 
-/** Base ore typeIDs used for optimization (Feldspar Crystals, Platinum-Palladium Matrix, Hydrated Sulfide Matrix). */
+/** Common base ore typeIDs preferred by optimization (Crustal Anorthosite Crystals, Massive Ataxite Matrix, Hydrated Gossan Matrix). */
 export const BASE_ORE_TYPE_IDS = new Set([77800, 77810, 77811]);
 
-function sumBaseOreOnly(base: Record<number, number>): number {
+/** True for mineable ore: common base ores, or types flagged isOre by the loader (ore groupIDs). */
+export function isOreType(typeID: number, types: TypesMap): boolean {
+  return BASE_ORE_TYPE_IDS.has(typeID) || types[String(typeID)]?.isOre === true;
+}
+
+function sumBaseOreOnly(base: Record<number, number>, types: TypesMap): number {
   return Object.entries(base)
-    .filter(([typeID]) => BASE_ORE_TYPE_IDS.has(Number(typeID)))
+    .filter(([typeID]) => isOreType(Number(typeID), types))
     .reduce((a, [, qty]) => a + qty, 0);
 }
 
-/** True if name suggests mineable rare ore (veins/matrix). */
-function isRareOreName(name: string): boolean {
-  const n = (name ?? "").toLowerCase();
-  return n.includes("veins") || n.includes("matrix");
-}
-
-/** Tier 1 = common ores only; Tier 2 = common + rare (veins/matrix); Tier 3 = any drop-only or other. */
+/** Tier 1 = common ores only; Tier 2 = any mineable ores; Tier 3 = any drop-only or other. */
 function getBlueprintOreTier(
   base: Record<number, number>,
   types: TypesMap
 ): 1 | 2 | 3 {
   const typeIDs = Object.keys(base).map(Number);
   if (typeIDs.length === 0) return 1;
-  for (const typeID of typeIDs) {
-    if (BASE_ORE_TYPE_IDS.has(typeID)) continue;
-    const name = types[String(typeID)]?.name ?? "";
-    if (isRareOreName(name)) continue;
-    return 3;
-  }
+  if (!typeIDs.every((id) => isOreType(id, types))) return 3;
   const allCommon = typeIDs.every((id) => BASE_ORE_TYPE_IDS.has(id));
   return allCommon ? 1 : 2;
 }
@@ -226,7 +220,8 @@ export function baseMaterialsPerUnitProduct(
     bpForType: Blueprint | undefined
   ): void {
     if (depth > maxDepthVal || quantityPerUnit <= 0) return;
-    const bp = bpForType ?? getBlueprintForProduct(typeID, blueprints);
+    // Ores are mined, even if some blueprint also yields them as a byproduct
+    const bp = bpForType ?? (isOreType(typeID, types) ? undefined : getBlueprintForProduct(typeID, blueprints));
     if (!bp) {
       result[typeID] = (result[typeID] ?? 0) + quantityPerUnit;
       return;
@@ -258,7 +253,7 @@ export function getOptimizedBlueprintForProduct(
     return {
       bp,
       tier: getBlueprintOreTier(base, types),
-      sum: sumBaseOreOnly(base),
+      sum: sumBaseOreOnly(base, types),
     };
   });
   const bestTier = Math.min(...withTierAndSum.map((x) => x.tier)) as 1 | 2 | 3;
@@ -358,7 +353,7 @@ export function getBlueprintOptionsForProduct(
       types,
       options
     );
-    const baseOrePerUnit = sumBaseOreOnly(base);
+    const baseOrePerUnit = sumBaseOreOnly(base, types);
     const tier = getBlueprintOreTier(base, types);
     const fallbackLabel = `Blueprint ${bp.blueprintTypeID}`;
     let chainFull = fallbackLabel;
@@ -635,6 +630,8 @@ function resolveBlueprintForPath(
     if (bp?.activities?.manufacturing?.products?.some((p) => p.typeID === typeID))
       return bp;
   }
+  // Ores are mined unless the user explicitly picked a recipe above
+  if (isOreType(typeID, types)) return undefined;
   return getOptimizedBlueprintForProduct(typeID, blueprints, types);
 }
 
