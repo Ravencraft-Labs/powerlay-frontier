@@ -258,6 +258,15 @@ function showOverFullscreenApps(w: BrowserWindow): void {
   w.setFullScreenable(false);
 }
 
+/**
+ * Windows: clicking a focusable overlay activates it, and a fullscreen game minimizes when it loses focus.
+ * Non-focusable overlays still take clicks without stealing focus, but their text inputs can't be typed into.
+ */
+function keepGameFocused(w: BrowserWindow): void {
+  if (process.platform !== "win32") return;
+  w.setFocusable(false);
+}
+
 function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   let w = overlayWindows[frame];
   if (w && !w.isDestroyed()) return w;
@@ -284,6 +293,7 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
   // Use highest Z-order level to improve overlay staying on top (helps on some Windows setups)
   w.setAlwaysOnTop(true, "screen-saver");
   showOverFullscreenApps(w);
+  keepGameFocused(w);
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = () => {
     if (saveTimeout) clearTimeout(saveTimeout);
@@ -396,6 +406,7 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
   w = new BrowserWindow(opts);
   w.setAlwaysOnTop(true, "screen-saver");
   showOverFullscreenApps(w);
+  keepGameFocused(w);
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = () => {
     if (saveTimeout) clearTimeout(saveTimeout);
