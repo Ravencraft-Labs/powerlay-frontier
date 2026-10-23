@@ -48,7 +48,8 @@
           "stripped/oreGroupIDs.json",
           "stripped/solarsystems.json",
           "raw/industry_blueprints.json",
-          "raw/industry_facilities.json"
+          "raw/industry_facilities.json",
+          "poc-map/base.json"
         ]
       }
     ],
