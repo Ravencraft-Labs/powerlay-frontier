@@ -104,12 +104,13 @@ export interface ConnectedStorage {
   characterId?: string;
 }
 
-/** Sent by a build overlay: mark an ore mined / a crafted item made (done: false undoes the manual mark). */
-export interface BuilderOverlayAction {
-  kind: "ore-done" | "item-done";
-  typeID: number;
-  done: boolean;
-}
+/**
+ * Sent by a build overlay: mark an ore mined / a crafted item made (done: false undoes the manual mark),
+ * or pick the tracking step to show (null = follow progress again).
+ */
+export type BuilderOverlayAction =
+  | { kind: "ore-done" | "item-done"; typeID: number; done: boolean }
+  | { kind: "pick-step"; step: number | null };
 
 /** What the desktop sends to a build overlay window. */
 export interface BuilderOverlayState {
@@ -121,6 +122,8 @@ export interface BuilderOverlayState {
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
   stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
+  /** Steps the overlay can switch between: `active` in first..last (0 = mining). */
+  steps?: { active: number; first: number; last: number };
 }
 
 export interface GameDataErrors {

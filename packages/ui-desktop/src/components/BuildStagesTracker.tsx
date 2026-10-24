@@ -9,15 +9,17 @@ interface Props {
   completed: boolean[];
   /** Step shown: 0 = mining, i = stages[i - 1]. */
   active: number;
-  /** True when the user picked the step (else it follows progress). */
-  pinned: boolean;
   miningPct: number;
   made: Record<number, number>;
   onMadeChange: (typeID: number, made: number) => void;
-  /** Pick a step, or null to follow progress again. */
-  onPick: (step: number | null) => void;
+  /** Show this step; it stays until everything in it is done, then the next unfinished one shows. */
+  onPick: (step: number) => void;
   onReset: () => void;
   fmt: (n: number) => string;
+  /** Free build: planned items only, no mining tab; the Mining block (with the overlay button) is hidden, so offer it here. */
+  free?: boolean;
+  overlayVisible?: boolean;
+  onToggleOverlay?: () => void;
 }
 
 const tabCls = (active: boolean, done: boolean) =>
@@ -37,14 +39,26 @@ const HELP = (
       planned items. Crafting is not in the game logs, so enter what you made or tick <strong>done</strong>.
     </p>
     <p className="text-muted text-xs">
-      The current step moves on by itself when everything in it is done. Click a step to look at it; click the
-      highlighted step again to go back to following progress.
+      The current step moves on by itself when everything in it is done. Click a step to switch to it.
     </p>
   </>
 );
 
 /** Steps after mining: crafted items per production-tree level, with hand-entered progress. */
-export function BuildStagesTracker({ stages, completed, active, pinned, miningPct, made, onMadeChange, onPick, onReset, fmt }: Props) {
+export function BuildStagesTracker({
+  stages,
+  completed,
+  active,
+  miningPct,
+  made,
+  onMadeChange,
+  onPick,
+  onReset,
+  fmt,
+  free = false,
+  overlayVisible = false,
+  onToggleOverlay,
+}: Props) {
   if (stages.length === 0) return null;
   const stage = active > 0 ? stages[active - 1] : undefined;
   const hasProgress = Object.keys(made).length > 0;
@@ -52,8 +66,20 @@ export function BuildStagesTracker({ stages, completed, active, pinned, miningPc
   return (
     <div className="rounded-md border border-border bg-bg px-4 py-3">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <h4 className="text-sm font-semibold text-text m-0">Crafting steps</h4>
+        <h4 className="text-sm font-semibold text-text m-0">{free ? "Tracked items" : "Crafting steps"}</h4>
         <div className="flex items-center gap-2">
+          {free && onToggleOverlay && (
+            <button
+              type="button"
+              className={`shrink-0 px-2 py-1 rounded text-xs border transition-colors cursor-pointer ${
+                overlayVisible ? "border-amber-500 text-amber-500 bg-amber-500/10" : "border-border text-muted hover:text-text hover:bg-border bg-transparent"
+              }`}
+              onClick={onToggleOverlay}
+              title={overlayVisible ? "Hide overlay" : "Show overlay"}
+            >
+              Overlay
+            </button>
+          )}
           {hasProgress && (
             <button
               type="button"
@@ -68,8 +94,10 @@ export function BuildStagesTracker({ stages, completed, active, pinned, miningPc
         </div>
       </div>
 
+      {/* A free build has one step and no mining: no tabs. */}
+      {!(free && stages.length === 1) && (
       <div className="flex flex-wrap gap-1.5 mb-3">
-        {[-1, ...stages.map((_, i) => i)].map((i) => {
+        {[...(free ? [] : [-1]), ...stages.map((_, i) => i)].map((i) => {
           const step = i + 1;
           const done = completed[step] ?? false;
           const label = step === 0 ? `Mining ${miningPct}%` : `Step ${step}`;
@@ -78,16 +106,15 @@ export function BuildStagesTracker({ stages, completed, active, pinned, miningPc
               key={step}
               type="button"
               className={tabCls(step === active, done)}
-              onClick={() => onPick(step === active && pinned ? null : step)}
-              title={step === active && pinned ? "Click to follow progress again" : undefined}
+              onClick={() => onPick(step)}
             >
               {done && "✓ "}
               {label}
-              {step === active && pinned && " · pinned"}
             </button>
           );
         })}
       </div>
+      )}
 
       {!stage ? (
         <p className="text-xs text-muted m-0">

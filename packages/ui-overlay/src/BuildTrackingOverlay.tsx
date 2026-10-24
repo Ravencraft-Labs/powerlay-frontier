@@ -91,6 +91,30 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     }
   }, [api?.overlay?.getBuilderState, buildId]);
 
+  // Step picked here but not yet confirmed by the desktop (state arrives by polling): arrows count from it,
+  // so fast clicks don't resend the same step.
+  const [pendingStep, setPendingStep] = useState<number | null>(null);
+
+  const pickStep = useCallback(
+    (step: number) => {
+      if (!buildId) return;
+      setPendingStep(step);
+      api?.overlay?.sendBuilderAction?.(buildId, { kind: "pick-step", step });
+      setTimeout(load, 150);
+    },
+    [api?.overlay, buildId, load]
+  );
+
+  useEffect(() => {
+    if (pendingStep == null) return;
+    if (state.steps?.active === pendingStep) {
+      setPendingStep(null);
+      return;
+    }
+    const t = setTimeout(() => setPendingStep(null), 2000);
+    return () => clearTimeout(t);
+  }, [pendingStep, state.steps?.active]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -134,7 +158,11 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const miningPct = totalOre > 0 ? Math.min(100, Math.round((mined / totalOre) * 100)) : 0;
   const productionLeft = state.productionLeftSeconds ?? 0;
   const miningOres = state.miningOres ?? [];
-  const stage = state.stage;
+  const steps = state.steps;
+  const activeStep = pendingStep ?? steps?.active ?? 0;
+  // Until the desktop confirms a picked step, the lists below still belong to the previous one.
+  const syncing = pendingStep != null && pendingStep !== steps?.active;
+  const stage = syncing ? undefined : state.stage;
 
   const prevProgressRef = useRef<Record<string, number>>({});
   const [blinkingOres, setBlinkingOres] = useState<Set<string>>(() => new Set());
@@ -198,6 +226,8 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     <OverlayFrame title={titleWithDot} buildId={buildId} headerActions={oreHintsButton}>
       {(locked) => (
       <div className="text-[0.8rem] text-muted space-y-1.5">
+        {/* A free build (no mining step) has nothing for the log tracker. */}
+        {steps?.first !== 1 && (
         <div className="flex items-center gap-2 mb-1">
           {!locked && (
             <button
@@ -217,14 +247,43 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
             {trackingBuildId === buildId ? "Tracking" : "Paused"}
           </span>
         </div>
+        )}
         {totalOre > 0 && (
           <div>
             Mining: {miningPct}% ({formatCompact(mined)} / {formatCompact(totalOre)} m³)
           </div>
         )}
+        {steps && steps.last > steps.first && (
+          <div className="flex items-center gap-1 overlay-no-drag">
+            {!locked && (
+              <button
+                type="button"
+                disabled={activeStep <= steps.first}
+                onClick={() => pickStep(activeStep - 1)}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                title="Previous step"
+              >
+                ◀
+              </button>
+            )}
+            <span className="text-text font-semibold">
+              {activeStep === 0 ? "Mining" : `Step ${activeStep} of ${steps.last}`}
+            </span>
+            {!locked && (
+              <button
+                type="button"
+                disabled={activeStep >= steps.last}
+                onClick={() => pickStep(activeStep + 1)}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                title="Next step"
+              >
+                ▶
+              </button>
+            )}
+          </div>
+        )}
         {stage && (
           <div className="space-y-1">
-            <div className="text-text font-semibold">Step {stage.index} of {stage.count}</div>
             {stage.items.map((item) => {
               const progress = item.needed > 0 ? Math.min(1, item.made / item.needed) : 0;
               const done = progress >= 1;
@@ -255,7 +314,7 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
             })}
           </div>
         )}
-        {!stage && miningOres.length > 0 && (
+        {!syncing && !stage && miningOres.length > 0 && (
           <div className="space-y-1">
             {miningOres.map((o, i) => {
               const progress = o.neededVol > 0 ? o.minedVol / o.neededVol : 0;
@@ -309,7 +368,7 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
             Production: {formatProductionTime(productionLeft)} left
           </div>
         )}
-        {totalOre <= 0 && productionLeft <= 0 && (
+        {totalOre <= 0 && productionLeft <= 0 && !stage && !syncing && (
           <div className="italic">Select a build and add items in the desktop app.</div>
         )}
       </div>

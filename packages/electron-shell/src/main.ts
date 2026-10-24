@@ -185,6 +185,7 @@ interface BuilderOverlayState {
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
   stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
+  steps?: { active: number; first: number; last: number };
 }
 let builderOverlayStateByBuild: Record<string, BuilderOverlayState> = {};
 

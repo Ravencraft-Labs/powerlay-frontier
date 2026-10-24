@@ -6,6 +6,7 @@ import {
   getBaseMaterialsFromTrees,
   totalVolumeFromMaterials,
   buildProductionStages,
+  plannedItemsStage,
   isStageComplete,
   oreMiningProgress,
   activeTrackingStage,
@@ -549,9 +550,9 @@ export function BuildMiningSection() {
     });
   }
 
-  /** Production trees for a saved build; empty until game data loads or while items lack typeIDs. */
+  /** Production trees for a saved build; empty until game data loads, while items lack typeIDs, or for a free build (no ore to mine). */
   function computeTrees(build: BuildPlan): ProductionTreeNode[] {
-    if (!gameData?.types || !gameData?.blueprints) return [];
+    if (!gameData?.types || !gameData?.blueprints || build.freeTracking) return [];
     const hasTypeIds = build.plannedItems.length > 0 && build.plannedItems.every((p) => p.typeID != null);
     if (!hasTypeIds) return [];
     const typeIdItems = build.plannedItems
@@ -582,7 +583,9 @@ export function BuildMiningSection() {
   /** Step shown in Tracking and the overlay: 0 = mining, i = crafting stage i. */
   function computeTrackingStep(build: BuildPlan): { stages: ProductionStage[]; completed: boolean[]; active: number } {
     if (!gameData?.types) return { stages: [], completed: [], active: 0 };
-    const stages = buildProductionStages(computeTrees(build), gameData.types);
+    const stages = build.freeTracking
+      ? plannedItemsStage(build.plannedItems, gameData.types)
+      : buildProductionStages(computeTrees(build), gameData.types);
     const made = craftedMade[build.id] ?? {};
     const ore = oreMiningProgress(
       computeBaseMaterials(build),
@@ -600,7 +603,9 @@ export function BuildMiningSection() {
   applyOverlayActionRef.current = (buildId, action) => {
     const build = builds.find((b) => b.id === buildId);
     if (!build || !gameData?.types) return;
-    if (action.kind === "ore-done") {
+    if (action.kind === "pick-step") {
+      handleStagePin(buildId, action.step);
+    } else if (action.kind === "ore-done") {
       const ore = computeBaseMaterials(build).find((m) => m.typeID === action.typeID);
       if (!ore) return;
       const needed =
@@ -771,6 +776,15 @@ export function BuildMiningSection() {
             needed: i.quantity,
           })),
         },
+        steps:
+          step.stages.length > 0
+            ? {
+                active: step.active,
+                // A free build has no mining step.
+                first: build.freeTracking ? 1 : 0,
+                last: step.stages.length,
+              }
+            : undefined,
       };
     }
     api(states);

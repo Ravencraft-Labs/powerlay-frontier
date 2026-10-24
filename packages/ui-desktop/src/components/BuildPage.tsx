@@ -27,6 +27,7 @@ import {
   timeToMineFromAmount,
   timeToRefineFromAmount,
   buildProductionStages,
+  plannedItemsStage,
   isStageComplete,
   oreMiningProgress,
   activeTrackingStage,
@@ -133,6 +134,7 @@ function normalizePlan(p: BuildPlan): BuildPlan {
       p.intermediateBlueprintOverrides && typeof p.intermediateBlueprintOverrides === "object"
         ? p.intermediateBlueprintOverrides
         : undefined,
+    freeTracking: p.freeTracking === true ? true : undefined,
     updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
   };
 }
@@ -1344,12 +1346,18 @@ export function BuildPage({
     ]
   );
 
+  const isFree = local.freeTracking === true;
   const productionStages = useMemo(
-    () => (gameData?.types ? buildProductionStages(productionTree, gameData.types) : []),
-    [productionTree, gameData?.types]
+    () =>
+      !gameData?.types
+        ? []
+        : isFree
+          ? plannedItemsStage(local.plannedItems, gameData.types)
+          : buildProductionStages(productionTree, gameData.types),
+    [isFree, local.plannedItems, productionTree, gameData?.types]
   );
   const madeForPlan = craftedMade[plan.id] ?? {};
-  const miningForPlan = gameData?.types
+  const miningForPlan = gameData?.types && !isFree
     ? oreMiningProgress(
         computeBaseMaterials(plan),
         gameData.types,
@@ -1565,6 +1573,18 @@ export function BuildPage({
         <div className="flex items-center justify-between mb-3">
           <h3 className="m-0 text-[0.9rem] font-semibold text-text">Tracking</h3>
           <div className="flex items-center gap-3">
+            <label
+              className="text-sm text-text flex items-center gap-2 cursor-pointer select-none"
+              title="Track the planned items by hand (e.g. 1000 cans), without mining or recipe steps"
+            >
+              <input
+                type="checkbox"
+                checked={isFree}
+                onChange={(e) => update({ freeTracking: e.target.checked || undefined })}
+                className="rounded border-border"
+              />
+              Free build
+            </label>
             <label className="text-sm text-text flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -1594,6 +1614,7 @@ export function BuildPage({
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {!isFree && (
           <MiningTrackingSubFrame
             buildId={plan.id}
             baseMaterials={computeBaseMaterials(plan)}
@@ -1616,6 +1637,7 @@ export function BuildPage({
             overlayVisible={overlayVisible}
             onToggleOverlay={onToggleOverlay}
           />
+          )}
           <div className="rounded-md border border-border bg-bg px-4 py-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <h4 className="text-sm font-semibold text-text m-0 flex items-center gap-2">
@@ -1691,13 +1713,15 @@ export function BuildPage({
               stages={productionStages}
               completed={stepsCompleted}
               active={activeStep}
-              pinned={pinnedStep != null && pinnedStep === activeStep}
               miningPct={miningForPlan.needed > 0 ? Math.min(100, Math.floor((miningForPlan.mined / miningForPlan.needed) * 100)) : 100}
               made={madeForPlan}
               onMadeChange={(typeID, made) => onCraftedChange?.(plan.id, typeID, made)}
               onPick={(step) => onStagePin?.(plan.id, step)}
               onReset={() => onCraftingReset?.(plan.id)}
               fmt={(n) => (shortenNumbers ? formatCompactNumber(n) : formatWithThousandsSeparator(n))}
+              free={isFree}
+              overlayVisible={overlayVisible}
+              onToggleOverlay={onToggleOverlay}
             />
           </div>
         )}
