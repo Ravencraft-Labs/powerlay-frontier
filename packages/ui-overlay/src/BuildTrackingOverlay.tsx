@@ -285,7 +285,8 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     </span>
   );
 
-  const hasOreHints = !stage && miningOres.some((o) => o.asteroids && o.asteroids.length > 0);
+  // Shown on every step (not only Mining) so the preference stays reachable; hints render under the ore list.
+  const hasOreHints = miningOres.some((o) => o.asteroids && o.asteroids.length > 0);
   const oreHintsButton = hasOreHints ? (
     <button
       type="button"
