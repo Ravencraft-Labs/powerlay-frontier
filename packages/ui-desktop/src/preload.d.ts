@@ -104,6 +104,18 @@ export interface ConnectedStorage {
   characterId?: string;
 }
 
+/** What the desktop sends to a build overlay window. */
+export interface BuilderOverlayState {
+  buildName?: string;
+  mined?: number;
+  totalOre?: number;
+  productionLeftSeconds?: number;
+  miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
+  plannedVolByTypeId?: Record<number, number>;
+  /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
+  stage?: { index: number; count: number; items: Array<{ name: string; made: number; needed: number }> };
+}
+
 export interface GameDataErrors {
   types?: string;
   blueprints?: string;
@@ -178,8 +190,8 @@ export interface EFOverlayAPI {
     hideBuilder?: (buildId: string) => Promise<void>;
     getLockState: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
-    getBuilderState: (buildId: string) => Promise<{ buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>;
-    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) => void;
+    getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
+    setBuilderState: (states: Record<string, BuilderOverlayState>) => void;
   };
   gameData: {
     get: () => Promise<GameData>;

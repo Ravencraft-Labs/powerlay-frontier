@@ -171,6 +171,8 @@ interface MiningOreItem {
   name: string;
   minedVol: number;
   neededVol: number;
+  /** Asteroid kinds carrying this ore, richest first. */
+  asteroids?: string[];
 }
 
 interface BuilderOverlayState {
@@ -180,6 +182,8 @@ interface BuilderOverlayState {
   productionLeftSeconds?: number;
   miningOres?: MiningOreItem[];
   plannedVolByTypeId?: Record<number, number>;
+  /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
+  stage?: { index: number; count: number; items: Array<{ name: string; made: number; needed: number }> };
 }
 let builderOverlayStateByBuild: Record<string, BuilderOverlayState> = {};
 

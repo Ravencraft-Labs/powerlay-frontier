@@ -26,11 +26,16 @@ import {
   fuelNeededFromAmount,
   timeToMineFromAmount,
   timeToRefineFromAmount,
+  buildProductionStages,
+  isStageComplete,
+  oreMiningProgress,
+  activeTrackingStage,
 } from "@powerlay/core";
 import type { GameData } from "../preload";
 import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime, parseCompactNumber, parseGamePaste } from "../utils/format";
 import { ItemIcon, useIconsBaseUrl } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
+import { BuildStagesTracker } from "./BuildStagesTracker";
 
 const DEBOUNCE_MS = 500;
 const TOOLTIP_DELAY_MS = 150;
@@ -107,6 +112,13 @@ interface BuildPageProps {
   computeBaseMaterials?: (plan: BuildPlan) => Array<{ typeID: number; name: string; quantity: number }>;
   overlayVisible?: boolean;
   onToggleOverlay?: () => void;
+  /** buildId -> typeID -> units crafted (entered by hand). */
+  craftedMade?: Record<string, Record<number, number>>;
+  /** buildId -> tracking step picked by the user. */
+  stagePins?: Record<string, number>;
+  onCraftedChange?: (buildId: string, typeID: number, made: number) => void;
+  onStagePin?: (buildId: string, step: number | null) => void;
+  onCraftingReset?: (buildId: string) => void;
 }
 
 function normalizePlan(p: BuildPlan): BuildPlan {
@@ -877,7 +889,7 @@ function MiningTrackingSubFrame({
 }: {
   buildId: string;
   baseMaterials: Array<{ typeID: number; name: string; quantity: number }>;
-  types: Record<string, { typeID: number; name?: string; volume?: number }>;
+  types: Record<string, { typeID: number; name?: string; volume?: number; oreAsteroids?: string[]; oreHint?: string }>;
   minedFromLog: Record<number, number>;
   manualMined: Record<number, number>;
   neededOverride: Record<number, number>;
@@ -1120,8 +1132,10 @@ function MiningTrackingSubFrame({
             const minedVol = getEffectiveMined(m.typeID, computedNeeded);
             const progress = neededVol > 0 ? minedVol / neededVol : 0;
             const isFilled = fillAllChecked || filledOres.has(m.typeID);
+            const { oreAsteroids, oreHint } = types[String(m.typeID)] ?? {};
             return (
-              <div key={m.typeID} className="flex items-center gap-2 relative">
+              <div key={m.typeID}>
+              <div className="flex items-center gap-2 relative">
                 <label className="flex items-center shrink-0 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1169,6 +1183,12 @@ function MiningTrackingSubFrame({
                   />
                 )}
               </div>
+              {oreAsteroids && oreAsteroids.length > 0 && (
+                <div className="pl-12 text-[11px] text-muted/80 truncate" title={oreHint}>
+                  Asteroids: {oreAsteroids.join(", ")}
+                </div>
+              )}
+              </div>
             );
           })}
         </div>
@@ -1207,6 +1227,11 @@ export function BuildPage({
   computeBaseMaterials = () => [],
   overlayVisible = false,
   onToggleOverlay,
+  craftedMade = {},
+  stagePins = {},
+  onCraftedChange,
+  onStagePin,
+  onCraftingReset,
 }: BuildPageProps) {
   const normalizedPlan = normalizePlan(plan);
   const [local, setLocal] = useState<BuildPlan>(() => normalizedPlan);
@@ -1317,6 +1342,27 @@ export function BuildPage({
       local.intermediateBlueprintOverrides,
     ]
   );
+
+  const productionStages = useMemo(
+    () => (gameData?.types ? buildProductionStages(productionTree, gameData.types) : []),
+    [productionTree, gameData?.types]
+  );
+  const madeForPlan = craftedMade[plan.id] ?? {};
+  const miningForPlan = gameData?.types
+    ? oreMiningProgress(
+        computeBaseMaterials(plan),
+        gameData.types,
+        miningMinedFromLog[plan.id] ?? {},
+        miningMinedManual[plan.id] ?? {},
+        miningNeededOverride[plan.id] ?? {}
+      )
+    : { mined: 0, needed: 0 };
+  const stepsCompleted = [
+    miningForPlan.needed <= 0 || miningForPlan.mined >= miningForPlan.needed,
+    ...productionStages.map((s) => isStageComplete(s, madeForPlan)),
+  ];
+  const pinnedStep = stagePins[plan.id];
+  const activeStep = activeTrackingStage(stepsCompleted, pinnedStep);
 
   const productionNetworkGraph = useMemo(
     () =>
@@ -1638,6 +1684,22 @@ export function BuildPage({
             </p>
           </div>
         </div>
+        {productionStages.length > 0 && (
+          <div className="mt-4">
+            <BuildStagesTracker
+              stages={productionStages}
+              completed={stepsCompleted}
+              active={activeStep}
+              pinned={pinnedStep != null && pinnedStep === activeStep}
+              miningPct={miningForPlan.needed > 0 ? Math.min(100, Math.floor((miningForPlan.mined / miningForPlan.needed) * 100)) : 100}
+              made={madeForPlan}
+              onMadeChange={(typeID, made) => onCraftedChange?.(plan.id, typeID, made)}
+              onPick={(step) => onStagePin?.(plan.id, step)}
+              onReset={() => onCraftingReset?.(plan.id)}
+              fmt={(n) => (shortenNumbers ? formatCompactNumber(n) : formatWithThousandsSeparator(n))}
+            />
+          </div>
+        )}
       </div>
 
       <div className={sectionCls}>

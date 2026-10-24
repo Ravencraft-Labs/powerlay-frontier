@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { BuildPlan } from "@powerlay/core";
+import type { BuildPlan, ProductionStage, ProductionTreeNode } from "@powerlay/core";
 import {
   totalManufacturingTimeSeconds,
   buildProductionTree,
   getBaseMaterialsFromTrees,
   totalVolumeFromMaterials,
+  buildProductionStages,
+  isStageComplete,
+  oreMiningProgress,
+  activeTrackingStage,
 } from "@powerlay/core";
-import type { GameData } from "../preload";
+import type { BuilderOverlayState, GameData } from "../preload";
 import { formatProductionTime } from "../utils/format";
 import { BuildPage } from "./BuildPage";
 
@@ -61,6 +65,8 @@ const MINING_MINED_KEY = "powerlay-mining-mined";
 const MINING_MANUAL_KEY = "powerlay-mining-manual";
 const MINING_NEEDED_OVERRIDE_KEY = "powerlay-mining-needed-override";
 const SELECTED_BUILD_KEY = "powerlay-selected-build";
+const CRAFTED_KEY = "powerlay-crafting-made";
+const STAGE_PIN_KEY = "powerlay-tracking-stage";
 
 interface ProductionTimerState {
   buildId: string;
@@ -135,6 +141,29 @@ function loadMiningNeededOverride(): MiningManualByType {
 
 function saveMiningNeededOverride(state: MiningManualByType): void {
   localStorage.setItem(MINING_NEEDED_OVERRIDE_KEY, JSON.stringify(state));
+}
+
+/** buildId -> typeID -> units made (crafting is not in any game log, so this is entered by hand). */
+type CraftedByType = Record<string, Record<number, number>>;
+/** buildId -> tracking step picked by the user (0 = mining, 1.. = crafting stages). */
+type StagePinByBuild = Record<string, number>;
+
+function loadJsonObject<T>(key: string): T {
+  try {
+    const raw = localStorage.getItem(key);
+    const data = raw ? (JSON.parse(raw) as unknown) : null;
+    return (typeof data === "object" && data !== null ? data : {}) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+function saveJsonObject(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
 }
 
 function getBuildsApi() {
@@ -212,6 +241,8 @@ export function BuildMiningSection() {
   const [miningMinedManual, setMiningMinedManual] = useState<MiningManualByType>(() => loadMiningManual());
   const [miningNeededOverride, setMiningNeededOverride] = useState<MiningManualByType>(() => loadMiningNeededOverride());
   const [miningMinedFromLog, setMiningMinedFromLog] = useState<Record<string, Record<number, number>>>({});
+  const [craftedMade, setCraftedMade] = useState<CraftedByType>(() => loadJsonObject<CraftedByType>(CRAFTED_KEY));
+  const [stagePins, setStagePins] = useState<StagePinByBuild>(() => loadJsonObject<StagePinByBuild>(STAGE_PIN_KEY));
   const [miningErrors, setMiningErrors] = useState<{
     tailerTestError?: string;
     logReaderError?: string;
@@ -239,6 +270,34 @@ export function BuildMiningSection() {
       return next;
     });
   }, []);
+
+  const handleCraftedChange = useCallback((buildId: string, typeID: number, made: number) => {
+    setCraftedMade((prev) => {
+      const next = { ...prev, [buildId]: { ...(prev[buildId] ?? {}), [typeID]: Math.max(0, made) } };
+      saveJsonObject(CRAFTED_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const handleStagePin = useCallback((buildId: string, stage: number | null) => {
+    setStagePins((prev) => {
+      const next = { ...prev };
+      if (stage == null) delete next[buildId];
+      else next[buildId] = stage;
+      saveJsonObject(STAGE_PIN_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const handleCraftingReset = useCallback((buildId: string) => {
+    setCraftedMade((prev) => {
+      const next = { ...prev };
+      delete next[buildId];
+      saveJsonObject(CRAFTED_KEY, next);
+      return next;
+    });
+    handleStagePin(buildId, null);
+  }, [handleStagePin]);
 
   useEffect(() => {
     const api = window.efOverlay?.mining;
@@ -423,6 +482,7 @@ export function BuildMiningSection() {
       return next;
     });
     window.efOverlay?.mining?.resetBuild(id);
+    handleCraftingReset(id);
     setTimerState((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -489,42 +549,67 @@ export function BuildMiningSection() {
     });
   }
 
-  /** Total volume (m³) of base materials (ore only) for mining progress. Matches cargo space. */
-  function computeTotalOreVolume(build: BuildPlan): number {
-    if (!gameData?.types || !gameData?.blueprints) return 0;
-    const hasTypeIds = build.plannedItems.length > 0 && build.plannedItems.every((p) => p.typeID != null);
-    if (!hasTypeIds) return 0;
-    const typeIdItems = build.plannedItems
-      .filter((p): p is typeof p & { typeID: number } => p.typeID != null)
-      .map((p) => ({ typeID: p.typeID, quantity: p.quantity, blueprintTypeID: p.blueprintTypeID }));
-    const trees = buildProductionTree(
-      typeIdItems,
-      gameData.blueprints,
-      gameData.types,
-      { overrides: build.intermediateBlueprintOverrides }
-    );
-    const baseList = getBaseMaterialsFromTrees(trees, gameData.types);
-    const oreList = filterToOreMaterials(baseList, gameData.types);
-    const baseRecord = Object.fromEntries(oreList.map((m) => [m.typeID, m.quantity]));
-    return totalVolumeFromMaterials(baseRecord, gameData.types);
-  }
-
-  function computeBaseMaterials(build: BuildPlan): Array<{ typeID: number; name: string; quantity: number }> {
+  /** Production trees for a saved build; empty until game data loads or while items lack typeIDs. */
+  function computeTrees(build: BuildPlan): ProductionTreeNode[] {
     if (!gameData?.types || !gameData?.blueprints) return [];
     const hasTypeIds = build.plannedItems.length > 0 && build.plannedItems.every((p) => p.typeID != null);
     if (!hasTypeIds) return [];
     const typeIdItems = build.plannedItems
       .filter((p): p is typeof p & { typeID: number } => p.typeID != null)
       .map((p) => ({ typeID: p.typeID, quantity: p.quantity, blueprintTypeID: p.blueprintTypeID }));
-    const trees = buildProductionTree(
+    return buildProductionTree(
       typeIdItems,
       gameData.blueprints,
       gameData.types,
       { overrides: build.intermediateBlueprintOverrides }
     );
-    const baseList = getBaseMaterialsFromTrees(trees, gameData.types);
+  }
+
+  /** Total volume (m³) of base materials (ore only) for mining progress. Matches cargo space. */
+  function computeTotalOreVolume(build: BuildPlan): number {
+    if (!gameData?.types) return 0;
+    const oreList = computeBaseMaterials(build);
+    const baseRecord = Object.fromEntries(oreList.map((m) => [m.typeID, m.quantity]));
+    return totalVolumeFromMaterials(baseRecord, gameData.types);
+  }
+
+  function computeBaseMaterials(build: BuildPlan): Array<{ typeID: number; name: string; quantity: number }> {
+    if (!gameData?.types) return [];
+    const baseList = getBaseMaterialsFromTrees(computeTrees(build), gameData.types);
     return filterToOreMaterials(baseList, gameData.types);
   }
+
+  /** Step shown in Tracking and the overlay: 0 = mining, i = crafting stage i. */
+  function computeTrackingStep(build: BuildPlan): { stages: ProductionStage[]; completed: boolean[]; active: number } {
+    if (!gameData?.types) return { stages: [], completed: [], active: 0 };
+    const stages = buildProductionStages(computeTrees(build), gameData.types);
+    const made = craftedMade[build.id] ?? {};
+    const ore = oreMiningProgress(
+      computeBaseMaterials(build),
+      gameData.types,
+      miningMinedFromLog[build.id] ?? {},
+      miningMinedManual[build.id] ?? {},
+      miningNeededOverride[build.id] ?? {}
+    );
+    const completed = [ore.needed <= 0 || ore.mined >= ore.needed, ...stages.map((s) => isStageComplete(s, made))];
+    return { stages, completed, active: activeTrackingStage(completed, stagePins[build.id]) };
+  }
+
+  // Finishing the step the user picked moves on: drop the pin when that step turns complete.
+  const pinnedWasCompleteRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    for (const build of builds) {
+      const pin = stagePins[build.id];
+      if (pin == null) {
+        delete pinnedWasCompleteRef.current[build.id];
+        continue;
+      }
+      const done = computeTrackingStep(build).completed[pin] ?? false;
+      const was = pinnedWasCompleteRef.current[build.id];
+      pinnedWasCompleteRef.current[build.id] = done;
+      if (was === false && done) handleStagePin(build.id, null);
+    }
+  }, [builds, stagePins, craftedMade, miningMinedFromLog, miningMinedManual, miningNeededOverride, gameData]);
 
   const handlePlayTimer = useCallback(
     (build: BuildPlan) => {
@@ -606,7 +691,7 @@ export function BuildMiningSection() {
     const api = window.efOverlay?.overlay?.setBuilderState;
     if (!api || buildsWithOverlayOpen.size === 0) return;
     const types = gameData?.types ?? {};
-    const states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }> = {};
+    const states: Record<string, BuilderOverlayState> = {};
     for (const buildId of buildsWithOverlayOpen) {
       const build = builds.find((b) => b.id === buildId);
       if (!build) continue;
@@ -631,7 +716,7 @@ export function BuildMiningSection() {
               const manual = manualByType[m.typeID] ?? 0;
               const minedVol = Math.min(Math.max(fromLog, manual), neededVol);
               mined += minedVol;
-              return { name: m.name, minedVol, neededVol };
+              return { name: m.name, minedVol, neededVol, asteroids: types[String(m.typeID)]?.oreAsteroids };
             })
           : undefined;
       if (effectiveTotal <= 0) effectiveTotal = totalOre;
@@ -644,6 +729,9 @@ export function BuildMiningSection() {
             : ts.pausedElapsedSeconds;
         productionLeftSeconds = Math.max(0, totalTime - elapsed);
       }
+      const step = computeTrackingStep(build);
+      const madeByType = craftedMade[build.id] ?? {};
+      const activeStage = step.active > 0 ? step.stages[step.active - 1] : undefined;
       states[buildId] = {
         buildName: build.name || "Unnamed",
         mined: totalOre > 0 ? mined : undefined,
@@ -651,10 +739,19 @@ export function BuildMiningSection() {
         productionLeftSeconds: productionLeftSeconds > 0 ? productionLeftSeconds : undefined,
         miningOres,
         plannedVolByTypeId: Object.keys(plannedVolByTypeId).length > 0 ? plannedVolByTypeId : undefined,
+        stage: activeStage && {
+          index: step.active,
+          count: step.stages.length,
+          items: activeStage.items.map((i) => ({
+            name: i.name,
+            made: Math.min(madeByType[i.typeID] ?? 0, i.quantity),
+            needed: i.quantity,
+          })),
+        },
       };
     }
     api(states);
-  }, [builds, buildsWithOverlayOpen, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, tick, gameData]);
+  }, [builds, buildsWithOverlayOpen, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, craftedMade, stagePins, tick, gameData]);
 
   return (
     <div className="flex flex-1 min-h-0 min-w-0">
@@ -850,6 +947,11 @@ export function BuildMiningSection() {
             computeBaseMaterials={computeBaseMaterials}
             overlayVisible={buildsWithOverlayOpen.has(selectedBuild.id)}
             onToggleOverlay={() => handleToggleOverlay(selectedBuild.id)}
+            craftedMade={craftedMade}
+            stagePins={stagePins}
+            onCraftedChange={handleCraftedChange}
+            onStagePin={handleStagePin}
+            onCraftingReset={handleCraftingReset}
           />
         )}
       </div>

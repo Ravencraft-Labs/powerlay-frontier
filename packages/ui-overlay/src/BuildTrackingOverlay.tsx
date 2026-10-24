@@ -99,6 +99,7 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const miningPct = totalOre > 0 ? Math.min(100, Math.round((mined / totalOre) * 100)) : 0;
   const productionLeft = state.productionLeftSeconds ?? 0;
   const miningOres = state.miningOres ?? [];
+  const stage = state.stage;
 
   const prevProgressRef = useRef<Record<string, number>>({});
   const [blinkingOres, setBlinkingOres] = useState<Set<string>>(() => new Set());
@@ -172,7 +173,30 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
             Mining: {miningPct}% ({formatCompact(mined)} / {formatCompact(totalOre)} m³)
           </div>
         )}
-        {miningOres.length > 0 && (
+        {stage && (
+          <div className="space-y-1">
+            <div className="text-text font-semibold">Step {stage.index} of {stage.count}</div>
+            {stage.items.map((item) => {
+              const progress = item.needed > 0 ? Math.min(1, item.made / item.needed) : 0;
+              const done = progress >= 1;
+              return (
+                <div key={item.name} className={`flex items-center gap-2 ${done ? "ore-complete-gray" : ""}`}>
+                  <span className="text-text min-w-[100px] truncate">{item.name}</span>
+                  <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${done ? "bg-muted" : "bg-blue-500"}`}
+                      style={{ width: `${progress * 100}%` }}
+                    />
+                  </div>
+                  <span className="shrink-0">
+                    {formatCompact(item.made)} / {formatCompact(item.needed)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!stage && miningOres.length > 0 && (
           <div className="space-y-1">
             {miningOres.map((o, i) => {
               const progress = o.neededVol > 0 ? o.minedVol / o.neededVol : 0;
@@ -188,17 +212,22 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                 .filter(Boolean)
                 .join(" ");
               return (
-                <div key={key} className={rowCls}>
-                  <span className="text-text min-w-[100px] truncate">{o.name}</span>
-                  <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${isGray ? "bg-muted" : "bg-blue-500"}`}
-                      style={{ width: `${progress * 100}%` }}
-                    />
+                <div key={key}>
+                  <div className={rowCls}>
+                    <span className="text-text min-w-[100px] truncate">{o.name}</span>
+                    <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${isGray ? "bg-muted" : "bg-blue-500"}`}
+                        style={{ width: `${progress * 100}%` }}
+                      />
+                    </div>
+                    <span className="shrink-0">
+                      {formatCompact(o.minedVol)} / {formatCompact(o.neededVol)}
+                    </span>
                   </div>
-                  <span className="shrink-0">
-                    {formatCompact(o.minedVol)} / {formatCompact(o.neededVol)}
-                  </span>
+                  {!isComplete && o.asteroids && o.asteroids.length > 0 && (
+                    <div className="text-[10px] text-muted/80 truncate pl-1">↳ {o.asteroids.join(", ")}</div>
+                  )}
                 </div>
               );
             })}

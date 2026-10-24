@@ -19,6 +19,8 @@ export interface MiningOreEntry {
   name: string;
   minedVol: number;
   neededVol: number;
+  /** Asteroid kinds carrying this ore, richest first. */
+  asteroids?: string[];
 }
 
 export interface BuilderOverlayState {
@@ -28,6 +30,15 @@ export interface BuilderOverlayState {
   productionLeftSeconds?: number;
   miningOres?: MiningOreEntry[];
   plannedVolByTypeId?: Record<number, number>;
+  /** Active crafting stage once mining is done (or picked by hand); absent while on mining. */
+  stage?: BuilderStageState;
+}
+
+/** Crafting stage `index` of `count` (1-based; 0 would be mining) with made/needed units per item. */
+export interface BuilderStageState {
+  index: number;
+  count: number;
+  items: Array<{ name: string; made: number; needed: number }>;
 }
 
 /** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
