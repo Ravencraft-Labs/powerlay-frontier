@@ -1,7 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { BuilderOverlayState } from "./preload.d";
 import { OverlayFrame } from "./components/OverlayFrame";
+import { ItemIcon } from "./components/ItemIcon";
 import { useEfOverlay } from "./hooks/useEfOverlay";
+
+/** Overlay-wide preference: show "where to mine" under each ore (on by default). */
+const ORE_HINTS_KEY = "powerlay-overlay-ore-hints";
+
+function loadShowOreHints(): boolean {
+  try {
+    return localStorage.getItem(ORE_HINTS_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function saveShowOreHints(on: boolean): void {
+  try {
+    localStorage.setItem(ORE_HINTS_KEY, on ? "on" : "off");
+  } catch {
+    /* ignore */
+  }
+}
 
 interface BuildTrackingOverlayProps {
   buildId: string | null;
@@ -44,6 +64,21 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const api = useEfOverlay();
   const [state, setState] = useState<BuilderOverlayState>({});
   const [trackingBuildId, setTrackingBuildId] = useState<string | null>(null);
+  const [showOreHints, setShowOreHints] = useState(loadShowOreHints);
+
+  const sendDone = useCallback(
+    (kind: "ore-done" | "item-done", typeID: number, done: boolean) => {
+      if (buildId) api?.overlay?.sendBuilderAction?.(buildId, { kind, typeID, done });
+    },
+    [api?.overlay, buildId]
+  );
+
+  const toggleOreHints = useCallback(() => {
+    setShowOreHints((prev) => {
+      saveShowOreHints(!prev);
+      return !prev;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const getState = api?.overlay?.getBuilderState;
@@ -145,8 +180,22 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     </span>
   );
 
+  const hasOreHints = !stage && miningOres.some((o) => o.asteroids && o.asteroids.length > 0);
+  const oreHintsButton = hasOreHints ? (
+    <button
+      type="button"
+      className={`w-7 h-7 flex items-center justify-center rounded text-xs font-bold transition-colors ${
+        showOreHints ? "text-amber-500 hover:bg-amber-500/20" : "text-muted hover:text-text hover:bg-border"
+      }`}
+      onClick={toggleOreHints}
+      title={showOreHints ? "Hide where to mine each ore" : "Show where to mine each ore"}
+    >
+      ?
+    </button>
+  ) : undefined;
+
   return (
-    <OverlayFrame title={titleWithDot} buildId={buildId}>
+    <OverlayFrame title={titleWithDot} buildId={buildId} headerActions={oreHintsButton}>
       {(locked) => (
       <div className="text-[0.8rem] text-muted space-y-1.5">
         <div className="flex items-center gap-2 mb-1">
@@ -181,6 +230,16 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
               const done = progress >= 1;
               return (
                 <div key={item.name} className={`flex items-center gap-2 ${done ? "ore-complete-gray" : ""}`}>
+                  {!locked && item.typeID != null && (
+                    <input
+                      type="checkbox"
+                      checked={done}
+                      onChange={(e) => sendDone("item-done", item.typeID!, e.target.checked)}
+                      className="shrink-0 overlay-no-drag cursor-pointer"
+                      title="Made"
+                    />
+                  )}
+                  {item.typeID != null && <ItemIcon typeID={item.typeID} />}
                   <span className="text-text min-w-[100px] truncate">{item.name}</span>
                   <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
                     <div
@@ -214,6 +273,16 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
               return (
                 <div key={key}>
                   <div className={rowCls}>
+                    {!locked && o.typeID != null && (
+                      <input
+                        type="checkbox"
+                        checked={isComplete}
+                        onChange={(e) => sendDone("ore-done", o.typeID!, e.target.checked)}
+                        className="shrink-0 overlay-no-drag cursor-pointer"
+                        title="All mined"
+                      />
+                    )}
+                    {o.typeID != null && <ItemIcon typeID={o.typeID} />}
                     <span className="text-text min-w-[100px] truncate">{o.name}</span>
                     <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
                       <div
@@ -225,8 +294,10 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                       {formatCompact(o.minedVol)} / {formatCompact(o.neededVol)}
                     </span>
                   </div>
-                  {!isComplete && o.asteroids && o.asteroids.length > 0 && (
-                    <div className="text-[10px] text-muted/80 truncate pl-1">↳ {o.asteroids.join(", ")}</div>
+                  {showOreHints && !isComplete && o.asteroids && o.asteroids.length > 0 && (
+                    <div className={`text-[10px] text-muted/80 truncate ${o.typeID == null ? "pl-1" : locked ? "pl-[22px]" : "pl-[43px]"}`}>
+                      ↳ {o.asteroids.join(", ")}
+                    </div>
                   )}
                 </div>
               );

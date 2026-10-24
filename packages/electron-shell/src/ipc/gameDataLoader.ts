@@ -267,6 +267,17 @@ export async function loadGameData(): Promise<GameData> {
     }
   }
 
+  // Where to mine each ore (asteroid kinds), from ore descriptions via strip-data. Optional.
+  const oreHintsResult = loadJson<Record<string, { asteroids: string[]; text: string }>>(
+    path.join(root, "data", "stripped", "ore_hints.json")
+  );
+  for (const [typeId, hint] of Object.entries(oreHintsResult.data)) {
+    const t = typesResult.data[typeId];
+    if (!t || !hint) continue;
+    if (hint.asteroids?.length) t.oreAsteroids = hint.asteroids;
+    if (hint.text) t.oreHint = hint.text;
+  }
+
   cached = {
     types: typesResult.data,
     blueprints,

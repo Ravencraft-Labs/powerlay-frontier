@@ -66,8 +66,18 @@ contextBridge.exposeInMainWorld("efOverlay", {
     clearUserSize: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
       ipcRenderer.invoke("overlay:clear-user-size", frame, buildId),
     getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
-    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) =>
+    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>; plannedVolByTypeId?: Record<number, number> }>) =>
       ipcRenderer.send("overlay:set-builder-state", states),
+    /** Build overlay: mark an ore mined / a crafted item made (or undo) in the desktop app. */
+    sendBuilderAction: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean }) =>
+      ipcRenderer.send("overlay:builder-action", buildId, action),
+    /** Desktop: receive build overlay actions. Returns an unsubscribe. */
+    onBuilderAction: (cb: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean }) => void) => {
+      const handler = (_e: unknown, buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean }) =>
+        cb(buildId, action);
+      ipcRenderer.on("builder:overlay-action", handler);
+      return () => ipcRenderer.removeListener("builder:overlay-action", handler);
+    },
   },
   gameData: {
     get: () => ipcRenderer.invoke("gameData:get"),

@@ -104,16 +104,23 @@ export interface ConnectedStorage {
   characterId?: string;
 }
 
+/** Sent by a build overlay: mark an ore mined / a crafted item made (done: false undoes the manual mark). */
+export interface BuilderOverlayAction {
+  kind: "ore-done" | "item-done";
+  typeID: number;
+  done: boolean;
+}
+
 /** What the desktop sends to a build overlay window. */
 export interface BuilderOverlayState {
   buildName?: string;
   mined?: number;
   totalOre?: number;
   productionLeftSeconds?: number;
-  miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
+  miningOres?: Array<{ typeID?: number; name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
-  stage?: { index: number; count: number; items: Array<{ name: string; made: number; needed: number }> };
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
 }
 
 export interface GameDataErrors {
@@ -192,6 +199,8 @@ export interface EFOverlayAPI {
     toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
     setBuilderState: (states: Record<string, BuilderOverlayState>) => void;
+    /** Actions sent from a build overlay (mark ore mined / item made). Returns an unsubscribe. */
+    onBuilderAction?: (cb: (buildId: string, action: BuilderOverlayAction) => void) => () => void;
   };
   gameData: {
     get: () => Promise<GameData>;

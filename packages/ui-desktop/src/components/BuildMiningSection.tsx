@@ -10,7 +10,7 @@ import {
   oreMiningProgress,
   activeTrackingStage,
 } from "@powerlay/core";
-import type { BuilderOverlayState, GameData } from "../preload";
+import type { BuilderOverlayAction, BuilderOverlayState, GameData } from "../preload";
 import { formatProductionTime } from "../utils/format";
 import { BuildPage } from "./BuildPage";
 
@@ -595,6 +595,28 @@ export function BuildMiningSection() {
     return { stages, completed, active: activeTrackingStage(completed, stagePins[build.id]) };
   }
 
+  // Done/undone ticks from a build overlay; same effect as the checkboxes in Tracking.
+  const applyOverlayActionRef = useRef<(buildId: string, action: BuilderOverlayAction) => void>(() => {});
+  applyOverlayActionRef.current = (buildId, action) => {
+    const build = builds.find((b) => b.id === buildId);
+    if (!build || !gameData?.types) return;
+    if (action.kind === "ore-done") {
+      const ore = computeBaseMaterials(build).find((m) => m.typeID === action.typeID);
+      if (!ore) return;
+      const needed =
+        miningNeededOverride[buildId]?.[ore.typeID] ?? (gameData.types[String(ore.typeID)]?.volume ?? 0) * ore.quantity;
+      handleMiningManualChange(buildId, ore.typeID, action.done ? needed : 0);
+    } else {
+      const item = computeTrackingStep(build).stages.flatMap((s) => s.items).find((i) => i.typeID === action.typeID);
+      if (item) handleCraftedChange(buildId, item.typeID, action.done ? item.quantity : 0);
+    }
+  };
+  useEffect(() => {
+    const subscribe = window.efOverlay?.overlay?.onBuilderAction;
+    if (!subscribe) return;
+    return subscribe((buildId, action) => applyOverlayActionRef.current(buildId, action));
+  }, []);
+
   // Finishing the step the user picked moves on: drop the pin when that step turns complete.
   const pinnedWasCompleteRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
@@ -716,7 +738,7 @@ export function BuildMiningSection() {
               const manual = manualByType[m.typeID] ?? 0;
               const minedVol = Math.min(Math.max(fromLog, manual), neededVol);
               mined += minedVol;
-              return { name: m.name, minedVol, neededVol, asteroids: types[String(m.typeID)]?.oreAsteroids };
+              return { typeID: m.typeID, name: m.name, minedVol, neededVol, asteroids: types[String(m.typeID)]?.oreAsteroids };
             })
           : undefined;
       if (effectiveTotal <= 0) effectiveTotal = totalOre;
@@ -743,6 +765,7 @@ export function BuildMiningSection() {
           index: step.active,
           count: step.stages.length,
           items: activeStage.items.map((i) => ({
+            typeID: i.typeID,
             name: i.name,
             made: Math.min(madeByType[i.typeID] ?? 0, i.quantity),
             needed: i.quantity,

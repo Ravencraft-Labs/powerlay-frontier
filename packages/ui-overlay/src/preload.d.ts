@@ -16,6 +16,8 @@ import type {
 } from "@powerlay/core";
 
 export interface MiningOreEntry {
+  /** For the item icon. */
+  typeID?: number;
   name: string;
   minedVol: number;
   neededVol: number;
@@ -38,7 +40,7 @@ export interface BuilderOverlayState {
 export interface BuilderStageState {
   index: number;
   count: number;
-  items: Array<{ name: string; made: number; needed: number }>;
+  items: Array<{ typeID?: number; name: string; made: number; needed: number }>;
 }
 
 /** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
@@ -76,6 +78,8 @@ export interface EFOverlayAPI {
   };
   overlay?: {
     getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
+    /** Mark an ore mined / a crafted item made (or undo) in the desktop app. */
+    sendBuilderAction?: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean }) => void;
     toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     setContentSize: (frame: OverlayShellFrame, width: number, height: number, buildId?: string) => void;
     hide?: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;

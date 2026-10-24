@@ -1020,8 +1020,9 @@ function MiningTrackingSubFrame({
         next.delete(typeID);
         return next;
       });
+      // Restore what was there before ticking; an ore completed elsewhere (e.g. the overlay) drops its manual value.
       const snap = snapshotPerOre[typeID];
-      if (snap != null && onManualChange) onManualChange(typeID, snap);
+      onManualChange?.(typeID, snap ?? 0);
       setSnapshotPerOre((prev) => {
         const next = { ...prev };
         delete next[typeID];
@@ -1131,7 +1132,7 @@ function MiningTrackingSubFrame({
             const neededVol = getEffectiveNeeded(m.typeID, computedNeeded);
             const minedVol = getEffectiveMined(m.typeID, computedNeeded);
             const progress = neededVol > 0 ? minedVol / neededVol : 0;
-            const isFilled = fillAllChecked || filledOres.has(m.typeID);
+            const isFilled = fillAllChecked || filledOres.has(m.typeID) || (neededVol > 0 && minedVol >= neededVol);
             const { oreAsteroids, oreHint } = types[String(m.typeID)] ?? {};
             return (
               <div key={m.typeID}>

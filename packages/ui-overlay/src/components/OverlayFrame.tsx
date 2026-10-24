@@ -19,6 +19,8 @@ export interface OverlayFrameProps {
   children: React.ReactNode | ((locked: boolean) => React.ReactNode);
   /** For builder overlay: buildId for lock state and content size. */
   buildId?: string | null;
+  /** Extra header buttons, shown before lock/close while unlocked (a locked overlay is click-through). */
+  headerActions?: React.ReactNode;
 }
 
 function LockClosedIcon({ className }: { className?: string }) {
@@ -54,7 +56,7 @@ function CloseIcon({ className }: { className?: string }) {
  * When unlocked: shows lock and close buttons and a resize grip. When locked: hides all interactive buttons.
  * Once resized with the grip the frame keeps that size (content scrolls) until the grip is double-clicked.
  */
-export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
+export function OverlayFrame({ title, children, buildId, headerActions }: OverlayFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [bgOpacity, setBgOpacity] = useState(92);
@@ -141,6 +143,7 @@ export function OverlayFrame({ title, children, buildId }: OverlayFrameProps) {
         <span className="min-w-0 truncate">{title}</span>
         {!locked && hasOverlayApi && (
           <div className="flex items-center gap-0.5 shrink-0 overlay-no-drag">
+            {headerActions}
             <button
               type="button"
               className="w-7 h-7 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border transition-colors"

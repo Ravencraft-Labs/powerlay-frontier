@@ -168,6 +168,7 @@ function applyOverlayLockState(frame: OverlayFrame, w: BrowserWindow): void {
 }
 
 interface MiningOreItem {
+  typeID?: number;
   name: string;
   minedVol: number;
   neededVol: number;
@@ -183,7 +184,7 @@ interface BuilderOverlayState {
   miningOres?: MiningOreItem[];
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
-  stage?: { index: number; count: number; items: Array<{ name: string; made: number; needed: number }> };
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
 }
 let builderOverlayStateByBuild: Record<string, BuilderOverlayState> = {};
 
@@ -647,6 +648,11 @@ ipcMain.handle("overlay:get-builder-state", (_event, buildId: string) => {
 
 ipcMain.on("overlay:set-builder-state", (_event, states: Record<string, BuilderOverlayState>) => {
   builderOverlayStateByBuild = states && typeof states === "object" ? { ...states } : {};
+});
+
+/** Build overlay -> desktop: progress lives in the desktop renderer, so overlay edits are forwarded there. */
+ipcMain.on("overlay:builder-action", (_event, buildId: string, action: unknown) => {
+  mainWindow?.webContents.send("builder:overlay-action", buildId, action);
 });
 
 ipcMain.handle("overlay:get-visible", (_event, frame: OverlayFrame) => {
