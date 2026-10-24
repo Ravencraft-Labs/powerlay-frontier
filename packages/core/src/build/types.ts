@@ -77,6 +77,8 @@ export interface BuildPlan {
   lasers: Laser[];
   /** Path -> blueprintTypeID for intermediate nodes (path e.g. "0/82426", "0/82426/78417"). */
   intermediateBlueprintOverrides?: Record<string, number>;
+  /** Free build: track the planned items by hand as one step (no mining, no recipe steps). */
+  freeTracking?: boolean;
   updatedAt: number;
 }
 

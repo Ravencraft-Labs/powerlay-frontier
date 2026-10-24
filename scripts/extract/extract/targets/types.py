@@ -78,6 +78,11 @@ class TypesTarget:
             entry["typeID"] = int(type_id)
             name_id = entry.get("typeNameID")
             entry["typeName_en-us"] = localizer.get(name_id if isinstance(name_id, int) else None)
+            # Raw only (strip-data drops description*); ore descriptions say which asteroids carry them.
+            desc_id = entry.get("descriptionID")
+            description = localizer.get(desc_id if isinstance(desc_id, int) else None)
+            if description:
+                entry["description_en-us"] = description
             output[str(int(type_id))] = entry
 
         out_dir = run_dir / "raw"

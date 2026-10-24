@@ -93,7 +93,7 @@ def test_types_target_emits_strip_data_compatible_shape(tmp_path: Path):
             descriptionID=94509,
         ),
     }
-    localizer = Localizer(mapping={12345: "Heavy Beam Laser I"}, language="en-us")
+    localizer = Localizer(mapping={12345: "Heavy Beam Laser I", 94509: "A laser."}, language="en-us")
 
     client = _make_client_with_types(tmp_path)
     run_dir = tmp_path / "run"
@@ -114,6 +114,7 @@ def test_types_target_emits_strip_data_compatible_shape(tmp_path: Path):
     assert entry["typeID"] == 459
     assert entry["typeNameID"] == 12345
     assert entry["typeName_en-us"] == "Heavy Beam Laser I"
+    assert entry["description_en-us"] == "A laser."
     assert entry["groupID"] == 53
     assert entry["mass"] == 1000.0
 

@@ -243,6 +243,29 @@ describe("buildProductionTree with overrides", () => {
   });
 });
 
+describe("buildProductionTree with batch recipes", () => {
+  // 21 Hydrocarbon Residue -> 75 D1 Fuel: inputs come in whole runs.
+  const fuel = 88335;
+  const residue = 89258;
+  const types = makeTypes([
+    { typeID: fuel, name: "D1 Fuel" },
+    { typeID: residue, name: "Hydrocarbon Residue" },
+  ]);
+  const blueprints = makeBlueprints([
+    { blueprintTypeID: 1627, productTypeID: fuel, productQty: 75, materials: [{ typeID: residue, quantity: 21 }] },
+  ]);
+
+  it("needs one full run for a small order instead of rounding to nothing", () => {
+    const [tree] = buildProductionTree([{ typeID: fuel, quantity: 1 }], blueprints, types);
+    expect(tree.children).toEqual([expect.objectContaining({ typeID: residue, quantity: 21 })]);
+  });
+
+  it("rounds runs up", () => {
+    const [tree] = buildProductionTree([{ typeID: fuel, quantity: 76 }], blueprints, types);
+    expect(tree.children[0].quantity).toBe(42);
+  });
+});
+
 describe("getBlueprintOptionsForProduct", () => {
   it("returns multiple options with isOptimized set for minimum base ore", () => {
     const productTypeID = 100;

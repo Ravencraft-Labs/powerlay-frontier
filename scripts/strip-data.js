@@ -222,3 +222,37 @@ if (fs.existsSync(systemstateInputPath)) {
 } else {
   console.log("system_states.json: skipped (systemstate.json not found)");
 }
+
+// --- Ore hints (where to mine: asteroid kinds from ore descriptions) ---
+// Cycle 7 ore descriptions end with a location paragraph, e.g. "Found frozen deep in the cores of
+// Pitch asteroids, and beneath the crust of Mire and Char asteroids in smaller amounts."
+// Asteroid kinds are its capitalized words; a sentence-initial word counts only when it opens a list
+// ("Bone, Flint and Spall asteroids", "Pitch asteroids also...") rather than the sentence ("Found ...").
+const oreHintsOutputPath = path.join(OUTPUT_DIR, "ore_hints.json");
+const descKey = "description_" + LOCALE;
+const CAPITALIZED_WORD = /\b[A-Z][a-z]+\b/g;
+const OPENS_LIST = /^[A-Z][a-z]+(,|\s+and\b|\s+asteroids?\b)/;
+
+function oreLocationText(description) {
+  const paragraphs = description.split(/\n\s*\n|\s{2,}/).map((p) => p.trim()).filter(Boolean);
+  const last = paragraphs[paragraphs.length - 1] ?? "";
+  return /asteroid/i.test(last) ? last : "";
+}
+
+const oreGroupSet = new Set(oreGroupIDs);
+const oreHints = {};
+for (const [key, t] of Object.entries(rawTypes)) {
+  if (!oreGroupSet.has(t?.groupID) || typeof t?.[descKey] !== "string") continue;
+  const text = oreLocationText(t[descKey].replace(/<[^>]+>/g, ""));
+  if (!text) continue;
+  const asteroids = [];
+  for (const sentence of text.split(/(?<=\.)\s+/)) {
+    for (const m of sentence.matchAll(CAPITALIZED_WORD)) {
+      if (m.index === 0 && !OPENS_LIST.test(sentence)) continue;
+      if (!asteroids.includes(m[0])) asteroids.push(m[0]);
+    }
+  }
+  oreHints[key] = { asteroids, text };
+}
+fs.writeFileSync(oreHintsOutputPath, JSON.stringify(oreHints, null, 0), "utf8");
+console.log("ore_hints.json: " + Object.keys(oreHints).length + " ores" + (Object.keys(oreHints).length ? "" : " (re-extract types for descriptions)"));

@@ -286,7 +286,9 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   );
 
   // Shown on every step (not only Mining) so the preference stays reachable; hints render under the ore list.
-  const hasOreHints = miningOres.some((o) => o.asteroids && o.asteroids.length > 0);
+  const hasOreHints =
+    miningOres.some((o) => o.asteroids && o.asteroids.length > 0) ||
+    !!state.stage?.items.some((i) => i.asteroids && i.asteroids.length > 0);
   const oreHintsButton = hasOreHints ? (
     <button
       type="button"
@@ -428,6 +430,11 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                   name={item.name}
                   progress={progress}
                   barMuted={done}
+                  below={
+                    showOreHints && !done && item.asteroids && item.asteroids.length > 0 ? (
+                      <div className="text-[10px] text-muted/80 truncate">↳ {item.asteroids.join(", ")}</div>
+                    ) : undefined
+                  }
                 >
                   {/* Minus buttons left of the count, plus buttons right of it, so they are hard to mix up. */}
                   {(() => {

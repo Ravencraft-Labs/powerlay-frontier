@@ -10,6 +10,7 @@ export function validateBuildPlan(plan: unknown): plan is BuildPlan {
   if (!Array.isArray(p.lasers) || !p.lasers.every(validateLaser)) return false;
   if (p.starSystemId !== undefined && typeof p.starSystemId !== "string") return false;
   if (p.intermediateBlueprintOverrides !== undefined && !validateIntermediateBlueprintOverrides(p.intermediateBlueprintOverrides)) return false;
+  if (p.freeTracking !== undefined && typeof p.freeTracking !== "boolean") return false;
   return true;
 }
 

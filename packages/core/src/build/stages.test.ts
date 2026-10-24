@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activeTrackingStage, buildProductionStages, isStageComplete, oreMiningProgress } from "./stages";
+import { activeTrackingStage, buildProductionStages, isStageComplete, jobBatchSize, oreMiningProgress, plannedItemsStage } from "./stages";
 import type { ProductionTreeNode } from "./gameData";
 import type { TypesMap } from "./types";
 
@@ -48,6 +48,45 @@ describe("buildProductionStages", () => {
     const [refined] = buildProductionStages(trees, types);
     expect(isStageComplete(refined, { 10: 10 })).toBe(false);
     expect(isStageComplete(refined, { 10: 11 })).toBe(true);
+  });
+});
+
+describe("plannedItemsStage", () => {
+  it("makes one stage of planned items, merging duplicates and skipping empty rows", () => {
+    expect(
+      plannedItemsStage([{ typeID: 20, quantity: 600 }, { typeID: 20, quantity: 400 }, { quantity: 5 }, { typeID: 30, quantity: 0 }], types)
+    ).toEqual([{ level: 1, items: [{ typeID: 20, name: "Can", quantity: 1000 }] }]);
+    expect(plannedItemsStage([], types)).toEqual([]);
+  });
+});
+
+describe("jobBatchSize", () => {
+  const blueprints = {
+    "1003": {
+      blueprintTypeID: 1003,
+      activities: { manufacturing: { materials: [{ typeID: 10, quantity: 17 }], products: [{ typeID: 20, quantity: 1 }], time: 30 } },
+    },
+    "1020": {
+      blueprintTypeID: 1020,
+      activities: { manufacturing: { materials: [{ typeID: 2, quantity: 2100 }], products: [{ typeID: 20, quantity: 14 }], time: 5 } },
+    },
+  };
+  const runs = {
+    1003: [{ facility: "Emergency Printer", outputRuns: 5 }, { facility: "Printer", outputRuns: 5 }],
+    1020: [{ facility: "Mini Printer", outputRuns: 5 }, { facility: "Printer", outputRuns: 20 }],
+  };
+
+  it("uses one full job when a run makes one unit, preferring the build's facility, else the smallest", () => {
+    expect(jobBatchSize(20, 1003, blueprints, types, runs, [])).toEqual({ size: 5, facility: "Emergency Printer", unit: "job" });
+    expect(jobBatchSize(20, 1003, blueprints, types, runs, ["Printer"])).toEqual({ size: 5, facility: "Printer", unit: "job" });
+  });
+
+  it("uses one run when a run makes several units (a full refining job is far too big)", () => {
+    expect(jobBatchSize(20, 1020, blueprints, types, runs, [])).toEqual({ size: 14, facility: "Mini Printer", unit: "run" });
+  });
+
+  it("returns null when no facility runs the blueprint", () => {
+    expect(jobBatchSize(20, 1003, blueprints, types, {}, [])).toBeNull();
   });
 });
 

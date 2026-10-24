@@ -875,6 +875,8 @@ export function BuildMiningSection() {
             made: Math.min(madeByType[i.typeID] ?? 0, i.quantity),
             needed: i.quantity,
             ...batchFields(build, i),
+            // Ores tracked as items (free build): where to mine them.
+            asteroids: types[String(i.typeID)]?.oreAsteroids,
           })),
         },
         steps:

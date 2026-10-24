@@ -125,7 +125,7 @@ export interface BuilderOverlayState {
   miningOres?: Array<{ typeID?: number; name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
-  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string }> };
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string; asteroids?: string[] }> };
   /** Steps the overlay can switch between: `active` in first..last (0 = mining). */
   steps?: { active: number; first: number; last: number; auto: boolean };
 }

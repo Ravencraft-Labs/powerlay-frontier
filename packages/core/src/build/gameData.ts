@@ -610,11 +610,30 @@ export function buildProductionGraph(
   return treeToGraph(trees, types);
 }
 
+/**
+ * Inputs to make `quantity` units in whole runs: runs = ceil(quantity / output per run), inputs =
+ * runs × recipe input. Batch recipes (21 Hydrocarbon Residue -> 75 D1 Fuel) can't run partially, and
+ * scaling per unit would round a small order (1 D1 Fuel = 0.28 Hydrocarbon) down to nothing.
+ */
+function materialsForQuantity(
+  blueprint: Blueprint,
+  productTypeID: number,
+  quantity: number
+): Array<{ typeID: number; quantity: number }> {
+  const mfg = blueprint.activities?.manufacturing;
+  const perRun = mfg?.products?.find((p) => p.typeID === productTypeID)?.quantity ?? 0;
+  if (!mfg?.materials?.length || perRun <= 0 || quantity <= 0) return [];
+  const runs = Math.ceil(quantity / perRun);
+  return mfg.materials.filter((m) => m.quantity > 0).map((m) => ({ typeID: m.typeID, quantity: runs * m.quantity }));
+}
+
 export interface ProductionTreeNode {
   typeID: number;
   name: string;
   quantity: number;
   children: ProductionTreeNode[];
+  /** Blueprint used to make this node; absent for base materials. */
+  blueprintTypeID?: number;
 }
 
 function resolveBlueprintForPath(
@@ -648,13 +667,11 @@ function buildTreeRecurse(
 ): ProductionTreeNode {
   const name = types[String(typeID)]?.name ?? String(typeID);
   const children: ProductionTreeNode[] = [];
+  let bp: Blueprint | undefined;
   if (depth < maxDepth && quantity > 0) {
-    const bp = resolveBlueprintForPath(typeID, pathPrefix, overrides, blueprints, types);
+    bp = resolveBlueprintForPath(typeID, pathPrefix, overrides, blueprints, types);
     if (bp) {
-      const perUnit = getMaterialsPerUnitProduct(bp, typeID);
-      for (const { typeID: matTypeID, quantityPerUnit } of perUnit) {
-        const childQty = Math.round(quantityPerUnit * quantity);
-        if (childQty <= 0) continue;
+      for (const { typeID: matTypeID, quantity: childQty } of materialsForQuantity(bp, typeID, quantity)) {
         if (pathTypeIDs.has(matTypeID)) continue;
         const nextPath = new Set(pathTypeIDs);
         nextPath.add(typeID);
@@ -675,7 +692,7 @@ function buildTreeRecurse(
       }
     }
   }
-  return { typeID, name, quantity, children };
+  return { typeID, name, quantity, children, ...(bp && { blueprintTypeID: bp.blueprintTypeID }) };
 }
 
 /** One tree per planned item; each node has typeID, name, quantity, children. Root uses resolved blueprint; overrides apply per path. */
@@ -706,11 +723,8 @@ export function buildProductionTree(
       if (!bp) bp = resolveBlueprint(item, blueprints, types);
       const children: ProductionTreeNode[] = [];
       if (bp && maxDepth > 0 && quantity > 0) {
-        const perUnit = getMaterialsPerUnitProduct(bp, typeID);
         const path = new Set<number>([typeID]);
-        for (const { typeID: matTypeID, quantityPerUnit } of perUnit) {
-          const childQty = Math.round(quantityPerUnit * quantity);
-          if (childQty <= 0) continue;
+        for (const { typeID: matTypeID, quantity: childQty } of materialsForQuantity(bp, typeID, quantity)) {
           const childPathPrefix = `${pathPrefix}/${matTypeID}`;
           children.push(
             buildTreeRecurse(
@@ -727,7 +741,7 @@ export function buildProductionTree(
           );
         }
       }
-      return { typeID, name, quantity, children };
+      return { typeID, name, quantity, children, ...(bp && { blueprintTypeID: bp.blueprintTypeID }) };
     });
 }
 

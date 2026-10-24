@@ -1840,8 +1840,6 @@ export function BuildPage({
                   types={gameData.types}
                   typeID={p.typeID}
                   producibleTypeIds={isFree ? industryTypeIds : producibleTypeIds}
-                  // Ores are 1 m³ per unit; the default cutoff would hide them.
-                  volumeMin={isFree ? 0 : 1}
                   onChange={(typeID) =>
                     updatePlannedItem(idx, {
                       ...p,
@@ -2236,15 +2234,12 @@ function ItemSearchWithTypes({
   typeID,
   onChange,
   producibleTypeIds,
-  volumeMin = 1,
 }: {
   types: GameData["types"];
   typeID: number | undefined;
   onChange: (typeID: number) => void;
   /** Only names with one of these types are offered. */
   producibleTypeIds?: Set<number>;
-  /** Types with volume at or below this are hidden. */
-  volumeMin?: number;
 }) {
   const name = typeID != null ? types[String(typeID)]?.name ?? String(typeID) : "";
   const [query, setQuery] = useState(name);
@@ -2255,9 +2250,10 @@ function ItemSearchWithTypes({
   }, [name]);
 
   const matches = useMemo(() => {
-    const all = searchTypesByName(types, query, { volumeMin, preferTypeIds: producibleTypeIds });
+    // No volume cutoff: fuel and refined materials are 0.28 m³, ores 1 m³; the type filter already drops junk.
+    const all = searchTypesByName(types, query, { volumeMin: 0, preferTypeIds: producibleTypeIds });
     return all.slice(0, MAX_ITEM_SEARCH_RESULTS);
-  }, [types, query, producibleTypeIds, volumeMin]);
+  }, [types, query, producibleTypeIds]);
 
   const iconsBaseUrl = useIconsBaseUrl();
   const hasTypes = Object.keys(types).length > 0;

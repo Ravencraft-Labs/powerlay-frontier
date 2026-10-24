@@ -42,7 +42,7 @@ export interface BuilderOverlayState {
 export interface BuilderStageState {
   index: number;
   count: number;
-  items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string }>;
+  items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string; asteroids?: string[] }>;
 }
 
 /** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
