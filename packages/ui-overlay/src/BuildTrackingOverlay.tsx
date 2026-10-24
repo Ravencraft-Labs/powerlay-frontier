@@ -4,6 +4,50 @@ import { OverlayFrame } from "./components/OverlayFrame";
 import { ItemIcon } from "./components/ItemIcon";
 import { useEfOverlay } from "./hooks/useEfOverlay";
 
+/**
+ * One ore/item line: optional checkbox on the left; on the right the icon, name and `children`
+ * (count, ± buttons), with the progress bar underneath spanning from the icon to the last button.
+ */
+function ItemRow({
+  checkbox,
+  typeID,
+  name,
+  progress,
+  barMuted,
+  below,
+  className = "",
+  children,
+}: {
+  checkbox?: React.ReactNode;
+  typeID?: number;
+  name: string;
+  progress: number;
+  barMuted: boolean;
+  below?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`flex items-start gap-2 ${className}`}>
+      {checkbox && <span className="h-6 flex items-center">{checkbox}</span>}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-h-6">
+          {typeID != null && <ItemIcon typeID={typeID} />}
+          <span className="flex-1 min-w-0 text-text truncate" title={name}>{name}</span>
+          {children}
+        </div>
+        <div className="mt-0.5 h-1 rounded-full bg-amber-500/40 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${barMuted ? "bg-muted" : "bg-blue-500"}`}
+            style={{ width: `${Math.min(1, progress) * 100}%` }}
+          />
+        </div>
+        {below}
+      </div>
+    </div>
+  );
+}
+
 /** Overlay-wide preference: show "where to mine" under each ore (on by default). */
 const ORE_HINTS_KEY = "powerlay-overlay-ore-hints";
 
@@ -105,6 +149,24 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     [api?.overlay, buildId, load]
   );
 
+  const setAuto = useCallback(
+    (on: boolean) => {
+      if (!buildId) return;
+      api?.overlay?.sendBuilderAction?.(buildId, { kind: "set-auto", on });
+      setTimeout(load, 150);
+    },
+    [api?.overlay, buildId, load]
+  );
+
+  const addMade = useCallback(
+    (typeID: number, delta: number) => {
+      if (!buildId) return;
+      api?.overlay?.sendBuilderAction?.(buildId, { kind: "item-add", typeID, delta });
+      setTimeout(load, 150);
+    },
+    [api?.overlay, buildId, load]
+  );
+
   useEffect(() => {
     if (pendingStep == null) return;
     if (state.steps?.active === pendingStep) {
@@ -159,6 +221,7 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const productionLeft = state.productionLeftSeconds ?? 0;
   const miningOres = state.miningOres ?? [];
   const steps = state.steps;
+  const hasStepSwitcher = !!steps && steps.last > steps.first;
   const activeStep = pendingStep ?? steps?.active ?? 0;
   // Until the desktop confirms a picked step, the lists below still belong to the previous one.
   const syncing = pendingStep != null && pendingStep !== steps?.active;
@@ -223,99 +286,150 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   ) : undefined;
 
   return (
-    <OverlayFrame title={titleWithDot} buildId={buildId} headerActions={oreHintsButton}>
+    <OverlayFrame
+      title={titleWithDot}
+      buildId={buildId}
+      headerActions={oreHintsButton}
+      // Rows hold ±N/±1 buttons around the count; keep in sync with the default width in electron-shell main.ts.
+      widthClassName="min-w-[400px] max-w-[460px]"
+    >
       {(locked) => (
       <div className="text-[0.8rem] text-muted space-y-1.5">
-        {/* A free build (no mining step) has nothing for the log tracker. */}
-        {steps?.first !== 1 && (
-        <div className="flex items-center gap-2 mb-1">
-          {!locked && (
-            <button
-              type="button"
-              className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors overlay-no-drag ${
-                trackingBuildId === buildId
-                  ? "text-amber-500 hover:bg-amber-500/20"
-                  : "text-green-500 hover:bg-green-500/20"
-              }`}
-              title={trackingBuildId === buildId ? "Stop tracking" : "Start tracking"}
-              onClick={handlePlayPause}
-            >
-              {trackingBuildId === buildId ? <PauseIcon /> : <PlayIcon />}
-            </button>
-          )}
-          <span className="text-[0.75rem] text-muted">
-            {trackingBuildId === buildId ? "Tracking" : "Paused"}
-          </span>
-        </div>
+        {/* One row: log tracking on the left (not for a free build: no mining), step switcher on the right. */}
+        {(steps?.first !== 1 || hasStepSwitcher) && (
+          <div className="flex items-center gap-2 min-h-7">
+            {steps?.first !== 1 && (
+              <>
+                {!locked && (
+                  <button
+                    type="button"
+                    className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors overlay-no-drag ${
+                      trackingBuildId === buildId
+                        ? "text-amber-500 hover:bg-amber-500/20"
+                        : "text-green-500 hover:bg-green-500/20"
+                    }`}
+                    title={trackingBuildId === buildId ? "Stop tracking" : "Start tracking"}
+                    onClick={handlePlayPause}
+                  >
+                    {trackingBuildId === buildId ? <PauseIcon /> : <PlayIcon />}
+                  </button>
+                )}
+                <span className="min-w-0 truncate text-[0.75rem] text-muted">
+                  {trackingBuildId === buildId ? "Tracking" : "Paused"}
+                </span>
+              </>
+            )}
+            {steps && hasStepSwitcher && (
+              <div className="ml-auto shrink-0 flex items-center gap-1 overlay-no-drag">
+                {!locked && (
+                  <button
+                    type="button"
+                    disabled={activeStep <= steps.first}
+                    onClick={() => pickStep(activeStep - 1)}
+                    className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                    title="Previous step"
+                  >
+                    ◀
+                  </button>
+                )}
+                <span className="text-text font-semibold whitespace-nowrap">
+                  {activeStep === 0 ? `Mining ${miningPct}%` : `Step ${activeStep} of ${steps.last}`}
+                </span>
+                {!locked && (
+                  <button
+                    type="button"
+                    disabled={activeStep >= steps.last}
+                    onClick={() => pickStep(activeStep + 1)}
+                    className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                    title="Next step"
+                  >
+                    ▶
+                  </button>
+                )}
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => setAuto(!steps.auto)}
+                    className={`ml-1 px-1.5 h-6 text-[11px] rounded border transition-colors ${
+                      steps.auto
+                        ? "border-amber-500/60 text-amber-500 bg-amber-500/10"
+                        : "border-border/60 text-muted hover:text-text hover:bg-border"
+                    }`}
+                    title={steps.auto ? "Auto-advance on: moves to the next step when this one is done" : "Auto-advance off: stays on this step"}
+                  >
+                    Auto
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
-        {totalOre > 0 && (
+        {/* Builds without crafting steps keep the mining total as its own line. */}
+        {!hasStepSwitcher && totalOre > 0 && (
           <div>
             Mining: {miningPct}% ({formatCompact(mined)} / {formatCompact(totalOre)} m³)
           </div>
         )}
-        {steps && steps.last > steps.first && (
-          <div className="flex items-center gap-1 overlay-no-drag">
-            {!locked && (
-              <button
-                type="button"
-                disabled={activeStep <= steps.first}
-                onClick={() => pickStep(activeStep - 1)}
-                className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
-                title="Previous step"
-              >
-                ◀
-              </button>
-            )}
-            <span className="text-text font-semibold">
-              {activeStep === 0 ? "Mining" : `Step ${activeStep} of ${steps.last}`}
-            </span>
-            {!locked && (
-              <button
-                type="button"
-                disabled={activeStep >= steps.last}
-                onClick={() => pickStep(activeStep + 1)}
-                className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
-                title="Next step"
-              >
-                ▶
-              </button>
-            )}
-          </div>
-        )}
         {stage && (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {stage.items.map((item) => {
               const progress = item.needed > 0 ? Math.min(1, item.made / item.needed) : 0;
               const done = progress >= 1;
               return (
-                <div key={item.name} className={`flex items-center gap-2 ${done ? "ore-complete-gray" : ""}`}>
-                  {!locked && item.typeID != null && (
-                    <input
-                      type="checkbox"
-                      checked={done}
-                      onChange={(e) => sendDone("item-done", item.typeID!, e.target.checked)}
-                      className="shrink-0 overlay-no-drag cursor-pointer"
-                      title="Made"
-                    />
-                  )}
-                  {item.typeID != null && <ItemIcon typeID={item.typeID} />}
-                  <span className="text-text min-w-[100px] truncate">{item.name}</span>
-                  <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${done ? "bg-muted" : "bg-blue-500"}`}
-                      style={{ width: `${progress * 100}%` }}
-                    />
-                  </div>
-                  <span className="shrink-0">
-                    {formatCompact(item.made)} / {formatCompact(item.needed)}
-                  </span>
-                </div>
+                <ItemRow
+                  key={item.name}
+                  className={done ? "ore-complete-gray" : ""}
+                  checkbox={
+                    !locked && item.typeID != null ? (
+                      <input
+                        type="checkbox"
+                        checked={done}
+                        onChange={(e) => sendDone("item-done", item.typeID!, e.target.checked)}
+                        className="shrink-0 overlay-no-drag cursor-pointer"
+                        title="Made"
+                      />
+                    ) : undefined
+                  }
+                  typeID={item.typeID}
+                  name={item.name}
+                  progress={progress}
+                  barMuted={done}
+                >
+                  {/* Minus buttons left of the count, plus buttons right of it, so they are hard to mix up. */}
+                  {(() => {
+                    const editable = !locked && item.typeID != null;
+                    const stepBtn = (delta: number) => (
+                      <button
+                        key={delta}
+                        type="button"
+                        disabled={delta < 0 ? item.made <= 0 : item.made >= item.needed}
+                        onClick={() => addMade(item.typeID!, delta)}
+                        className="min-w-[1.75rem] h-6 px-1.5 text-[11px] rounded border border-border/60 text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                        // Overlays can't take typing on Windows (non-focusable), so the step is set in the app.
+                        title={Math.abs(delta) === 1 ? "One unit" : `${item.batchTitle ?? "Your step"} (set your own in the app)`}
+                      >
+                        {delta > 0 ? `+${delta}` : `−${-delta}`}
+                      </button>
+                    );
+                    return (
+                      <span className="flex items-center gap-1 shrink-0 overlay-no-drag">
+                        {editable && item.batch != null && stepBtn(-item.batch)}
+                        {editable && stepBtn(-1)}
+                        <span className="px-1 text-center tabular-nums">
+                          {formatCompact(item.made)} / {formatCompact(item.needed)}
+                        </span>
+                        {editable && stepBtn(1)}
+                        {editable && item.batch != null && stepBtn(item.batch)}
+                      </span>
+                    );
+                  })()}
+                </ItemRow>
               );
             })}
           </div>
         )}
         {!syncing && !stage && miningOres.length > 0 && (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {miningOres.map((o, i) => {
               const progress = o.neededVol > 0 ? o.minedVol / o.neededVol : 0;
               const key = `${i}-${o.name}-${o.neededVol}`;
@@ -323,16 +437,18 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
               const isBlinking = blinkingOres.has(key);
               const isGray = isComplete && !isBlinking;
               const rowCls = [
-                "flex items-center gap-2 transition-opacity duration-300",
+                "transition-opacity duration-300",
                 isBlinking && "ore-complete-blink",
                 isGray && "ore-complete-gray",
               ]
                 .filter(Boolean)
                 .join(" ");
               return (
-                <div key={key}>
-                  <div className={rowCls}>
-                    {!locked && o.typeID != null && (
+                <ItemRow
+                  key={key}
+                  className={rowCls}
+                  checkbox={
+                    !locked && o.typeID != null ? (
                       <input
                         type="checkbox"
                         checked={isComplete}
@@ -340,25 +456,22 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                         className="shrink-0 overlay-no-drag cursor-pointer"
                         title="All mined"
                       />
-                    )}
-                    {o.typeID != null && <ItemIcon typeID={o.typeID} />}
-                    <span className="text-text min-w-[100px] truncate">{o.name}</span>
-                    <div className="flex-1 min-w-0 h-1 rounded-full bg-amber-500/40 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${isGray ? "bg-muted" : "bg-blue-500"}`}
-                        style={{ width: `${progress * 100}%` }}
-                      />
-                    </div>
-                    <span className="shrink-0">
-                      {formatCompact(o.minedVol)} / {formatCompact(o.neededVol)}
-                    </span>
-                  </div>
-                  {showOreHints && !isComplete && o.asteroids && o.asteroids.length > 0 && (
-                    <div className={`text-[10px] text-muted/80 truncate ${o.typeID == null ? "pl-1" : locked ? "pl-[22px]" : "pl-[43px]"}`}>
-                      ↳ {o.asteroids.join(", ")}
-                    </div>
-                  )}
-                </div>
+                    ) : undefined
+                  }
+                  typeID={o.typeID}
+                  name={o.name}
+                  progress={progress}
+                  barMuted={isGray}
+                  below={
+                    showOreHints && !isComplete && o.asteroids && o.asteroids.length > 0 ? (
+                      <div className="text-[10px] text-muted/80 truncate">↳ {o.asteroids.join(", ")}</div>
+                    ) : undefined
+                  }
+                >
+                  <span className="shrink-0 tabular-nums">
+                    {formatCompact(o.minedVol)} / {formatCompact(o.neededVol)}
+                  </span>
+                </ItemRow>
               );
             })}
           </div>
