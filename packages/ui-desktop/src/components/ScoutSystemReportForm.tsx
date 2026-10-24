@@ -1,117 +1,138 @@
-import React, { useState } from "react";
-import type { CreateScoutEntryInput, ScoutVisibility, SystemReport } from "@powerlay/core";
-
-interface Props {
-  currentSystem: string;
-  defaultVisibility: ScoutVisibility;
-  onSubmit: (input: CreateScoutEntryInput) => void;
-}
+import React, { useEffect, useState } from "react";
+import { withReportField } from "@powerlay/core";
+import type { SystemReport } from "@powerlay/core";
 
 const inputCls = "w-full px-2 py-1.5 text-sm bg-bg border border-border-input rounded text-text focus:outline-none focus:border-selection-bg";
 const labelCls = "block text-xs text-muted mb-1";
 const pillCls = (on: boolean) =>
-  `min-w-[2rem] px-2.5 py-1 text-xs font-medium rounded border cursor-pointer ${
+  `min-w-[1.75rem] px-2 py-0.5 text-xs font-medium rounded border cursor-pointer disabled:opacity-40 disabled:cursor-default ${
     on
-      ? "border-selection-bg bg-selection-bg/15 text-text"
+      ? "border-teal-400/60 bg-teal-400/15 text-teal-300"
       : "border-border/50 text-muted hover:text-text hover:border-border bg-transparent"
   }`;
 
-/** Skip + 1..max buttons; null = skipped. */
-function LevelPicker({ max, value, onChange }: { max: number; value: number | null; onChange: (v: number | null) => void }) {
+/** 1..max buttons; clicking the selected one clears it. */
+function LevelPicker({ max, value, disabled, onChange }: {
+  max: number;
+  value: number | undefined;
+  disabled: boolean;
+  onChange: (v: number | undefined) => void;
+}) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <button type="button" className={pillCls(value === null)} onClick={() => onChange(null)}>Skip</button>
+    <div className="flex flex-wrap gap-1">
       {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
-        <button key={n} type="button" className={pillCls(value === n)} onClick={() => onChange(n)}>{n}</button>
+        <button
+          key={n}
+          type="button"
+          disabled={disabled}
+          className={pillCls(value === n)}
+          onClick={() => onChange(value === n ? undefined : n)}
+        >
+          {n}
+        </button>
       ))}
     </div>
   );
 }
 
-/** What a player reads off a system in game: planets, spectral class, transient mass, infestation index. */
-export function ScoutSystemReportForm({ currentSystem, defaultVisibility, onSubmit }: Props) {
+interface LevelsProps {
+  system: string;
+  report: SystemReport | undefined;
+  onSave: (report: SystemReport) => void;
+}
+
+/** Transient mass + infestation index: always visible, one click saves to the system's report. */
+export function ScoutReportLevels({ system, report, onSave }: LevelsProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted w-24 text-right">Transient mass</span>
+        <LevelPicker
+          max={5}
+          value={report?.transientMass}
+          disabled={!system}
+          onChange={(v) => onSave(withReportField(report, "transientMass", v))}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted w-24 text-right">Infestation</span>
+        <LevelPicker
+          max={6}
+          value={report?.infestationIndex}
+          disabled={!system}
+          onChange={(v) => onSave(withReportField(report, "infestationIndex", v))}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface FormProps {
+  system: string;
+  report: SystemReport | undefined;
+  notes: string | undefined;
+  onSave: (report: SystemReport, notes: string | undefined) => void;
+}
+
+/** Planets + spectral class + notes for the system's report (read from Show Info). */
+export function ScoutSystemReportForm({ system, report, notes, onSave }: FormProps) {
   const [planets, setPlanets] = useState("");
   const [spectralClass, setSpectralClass] = useState("");
-  const [transientMass, setTransientMass] = useState<number | null>(null);
-  const [infestationIndex, setInfestationIndex] = useState<number | null>(null);
-  const [notes, setNotes] = useState("");
+  const [notesText, setNotesText] = useState("");
 
-  const planetsNum = planets.trim() === "" ? null : Number(planets);
-  const planetsValid = planetsNum === null || (Number.isInteger(planetsNum) && planetsNum >= 0 && planetsNum <= 99);
-  const report: SystemReport = {
-    ...(planetsNum !== null && planetsValid && { planets: planetsNum }),
-    ...(spectralClass.trim() && { spectralClass: spectralClass.trim().toUpperCase() }),
-    ...(transientMass !== null && { transientMass }),
-    ...(infestationIndex !== null && { infestationIndex }),
-  };
-  const canSubmit = !!currentSystem.trim() && planetsValid && Object.keys(report).length > 0;
+  // Prefill from the saved report whenever the system or its report changes.
+  useEffect(() => {
+    setPlanets(report?.planets !== undefined ? String(report.planets) : "");
+    setSpectralClass(report?.spectralClass ?? "");
+    setNotesText(notes ?? "");
+  }, [system, report?.planets, report?.spectralClass, notes]);
+
+  const planetsNum = planets.trim() === "" ? undefined : Number(planets);
+  const planetsValid = planetsNum === undefined || (Number.isInteger(planetsNum) && planetsNum >= 0 && planetsNum <= 99);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
-    onSubmit({
-      system: currentSystem.trim(),
-      type: "system",
-      visibility: defaultVisibility,
-      reporter: "manual",
-      report,
-      ...(notes.trim() && { notes: notes.trim() }),
-    });
-    setPlanets("");
-    setSpectralClass("");
-    setTransientMass(null);
-    setInfestationIndex(null);
-    setNotes("");
+    if (!system || !planetsValid) return;
+    let next = withReportField(report, "planets", planetsNum);
+    next = withReportField(next, "spectralClass", spectralClass.trim().toUpperCase() || undefined);
+    onSave(next, notesText.trim() || undefined);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <div className="flex gap-2">
-        <div className="w-28">
-          <label className={labelCls}>Planets</label>
-          <input
-            className={`${inputCls} ${planetsValid ? "" : "border-red-400/60"}`}
-            type="number"
-            min={0}
-            max={99}
-            value={planets}
-            onChange={(e) => setPlanets(e.target.value)}
-            placeholder="Show Info"
-          />
-        </div>
-        <div className="w-28">
-          <label className={labelCls}>Spectral class</label>
-          <input
-            className={inputCls}
-            type="text"
-            value={spectralClass}
-            onChange={(e) => setSpectralClass(e.target.value)}
-            placeholder="e.g. M6"
-            maxLength={8}
-          />
-        </div>
-        <div className="flex-1">
-          <label className={labelCls}>Notes (optional)</label>
-          <input className={inputCls} type="text" value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
+    <form onSubmit={handleSubmit} className="flex items-end gap-2">
+      <div className="w-24">
+        <label className={labelCls}>Planets</label>
+        <input
+          className={`${inputCls} ${planetsValid ? "" : "border-red-400/60"}`}
+          type="number"
+          min={0}
+          max={99}
+          value={planets}
+          onChange={(e) => setPlanets(e.target.value)}
+          placeholder="Show Info"
+        />
       </div>
-
-      <div>
-        <label className={labelCls}>Transient mass</label>
-        <LevelPicker max={5} value={transientMass} onChange={setTransientMass} />
+      <div className="w-24">
+        <label className={labelCls}>Spectral class</label>
+        <input
+          className={inputCls}
+          type="text"
+          value={spectralClass}
+          onChange={(e) => setSpectralClass(e.target.value)}
+          placeholder="e.g. M6"
+          maxLength={8}
+        />
       </div>
-
-      <div>
-        <label className={labelCls}>Infestation index</label>
-        <LevelPicker max={6} value={infestationIndex} onChange={setInfestationIndex} />
+      <div className="flex-1">
+        <label className={labelCls}>Notes (optional)</label>
+        <input className={inputCls} type="text" value={notesText} onChange={(e) => setNotesText(e.target.value)} />
       </div>
-
       <button
         type="submit"
-        disabled={!canSubmit}
-        className="self-start px-4 py-1.5 text-sm font-medium rounded-md bg-selection-bg text-bg hover:opacity-90 cursor-pointer border-0 disabled:opacity-40 disabled:cursor-default"
+        disabled={!system || !planetsValid}
+        className="px-4 py-1.5 text-sm font-medium rounded-md bg-selection-bg text-bg hover:opacity-90 cursor-pointer border-0 disabled:opacity-40 disabled:cursor-default"
       >
-        Save report
+        Save
       </button>
     </form>
   );

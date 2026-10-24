@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { buildZoneCatalog, formatSystemReport, siteTooltip } from "@powerlay/core";
+import { buildZoneCatalog, findSystemReport, formatSystemReport, siteTooltip, withReportField } from "@powerlay/core";
 import type { ScoutEntry, RiftZone, CreateScoutEntryInput, ScoutSiteDef, SystemState } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
@@ -156,6 +156,31 @@ export function ScoutOverlay() {
     }
   }
 
+  /** One report entry per system: set/clear one level in place, delete the entry when it empties. */
+  async function setReportLevel(key: "transientMass" | "infestationIndex", value: number | undefined) {
+    if (!activeSystem) return;
+    const existing = findSystemReport(entries, activeSystem);
+    const report = withReportField(existing?.report, key, value);
+    try {
+      if (existing) {
+        if (Object.keys(report).length === 0 && !existing.notes) await api?.scout?.delete?.(existing.id);
+        else await api?.scout?.update?.(existing.id, { report });
+      } else if (value !== undefined) {
+        await api?.scout?.create?.({
+          system: activeSystem,
+          type: "system",
+          visibility: defaultVisibility,
+          reporter: "overlay",
+          report,
+        });
+      }
+      const list = await api?.scout?.list?.();
+      if (list) setEntries(list);
+    } catch {
+      /* ignore */
+    }
+  }
+
   function showLinkResult(res: PocSystemLink[] | undefined) {
     if (!res || res.length === 0) {
       setLinkResult("No system links found");
@@ -174,6 +199,7 @@ export function ScoutOverlay() {
   const currentLink = activeSystem ? links.find((l) => l.name?.toLowerCase() === activeSystem.toLowerCase()) : undefined;
 
   const currentSystemEntries = entries.filter((e) => e.system === activeSystem && e.status === "active");
+  const currentReport = activeSystem ? findSystemReport(entries, activeSystem) : null;
 
   return (
     <OverlayFrame title="Scout">
@@ -309,6 +335,38 @@ export function ScoutOverlay() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* System report levels (game UI only; one click each, click again to clear) */}
+        <div className="px-3 pb-2 flex flex-col gap-1">
+          {([
+            ["transientMass", "MASS", 5],
+            ["infestationIndex", "INFEST", 6],
+          ] as const).map(([key, label, max]) => {
+            const value = currentReport?.report?.[key];
+            return (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className="w-14 shrink-0 text-[10px] font-semibold text-muted uppercase tracking-wide text-right">{label}</span>
+                <div className="flex gap-1">
+                  {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={!activeSystem}
+                      onClick={() => void setReportLevel(key, value === n ? undefined : n)}
+                      className={`min-w-[1.25rem] text-[10px] font-medium px-1 py-0.5 rounded border cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-default ${
+                        value === n
+                          ? "text-teal-300 border-teal-400/60 bg-teal-400/15"
+                          : "bg-transparent border-border/40 text-muted hover:border-border hover:text-text"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Active entries for current system */}

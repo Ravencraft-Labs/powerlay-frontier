@@ -1,5 +1,27 @@
 import type { ScoutEntry, CreateScoutEntryInput, UpdateScoutEntryInput, SystemReport } from "./types.js";
 
+/** Newest active "system" report for a system; reports are edited in place, one per system. */
+export function findSystemReport(entries: ScoutEntry[], system: string): ScoutEntry | null {
+  let found: ScoutEntry | null = null;
+  for (const e of entries) {
+    if (e.type !== "system" || e.system !== system || e.status !== "active") continue;
+    if (!found || e.createdAt > found.createdAt) found = e;
+  }
+  return found;
+}
+
+/** Copy of `report` with `key` set, or removed when `value` is undefined. */
+export function withReportField<K extends keyof SystemReport>(
+  report: SystemReport | undefined,
+  key: K,
+  value: SystemReport[K] | undefined
+): SystemReport {
+  const next: SystemReport = { ...report };
+  if (value === undefined) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
 /** "4 planets · M6 · mass 3 · infestation 6" */
 export function formatSystemReport(r: SystemReport): string {
   return [

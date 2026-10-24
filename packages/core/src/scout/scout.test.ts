@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildZoneCatalog, ZONE_CATALOG } from "./catalog";
 import { validateScoutEntry } from "./validation";
-import { createScoutEntry } from "./scoutEntry";
+import { createScoutEntry, findSystemReport, withReportField } from "./scoutEntry";
 
 describe("buildZoneCatalog", () => {
   it("falls back to the built-in catalog without static data", () => {
@@ -37,6 +37,18 @@ describe("system report entries", () => {
     );
     expect(validateScoutEntry(entry)).toBe(true);
     expect(entry.report?.transientMass).toBe(3);
+  });
+
+  it("finds the newest active report and edits single fields", () => {
+    const old = createScoutEntry({ ...base, report: { planets: 3 } }, "old", "2026-10-01T00:00:00Z");
+    const newer = createScoutEntry({ ...base, report: { transientMass: 2 } }, "new", "2026-10-02T00:00:00Z");
+    const cleared = { ...createScoutEntry({ ...base }, "x", "2026-10-03T00:00:00Z"), status: "cleared" as const };
+    const other = createScoutEntry({ ...base, system: "OTHER" }, "o", "2026-10-04T00:00:00Z");
+    expect(findSystemReport([old, newer, cleared, other], "B1O|N11")?.id).toBe("new");
+    expect(findSystemReport([other], "B1O|N11")).toBeNull();
+
+    expect(withReportField({ transientMass: 2 }, "infestationIndex", 5)).toEqual({ transientMass: 2, infestationIndex: 5 });
+    expect(withReportField({ transientMass: 2, planets: 4 }, "transientMass", undefined)).toEqual({ planets: 4 });
   });
 
   it("rejects out-of-range values", () => {

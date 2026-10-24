@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildZoneCatalog } from "@powerlay/core";
-import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, ScoutSettings, ScoutActivityEvent, ScoutSiteDef, SystemState } from "@powerlay/core";
+import { buildZoneCatalog, findSystemReport } from "@powerlay/core";
+import type { ScoutEntry, RiftZone, ScoutVisibility, CreateScoutEntryInput, ScoutSettings, ScoutActivityEvent, ScoutSiteDef, SystemReport, SystemState } from "@powerlay/core";
 import { ScoutQuickPicker } from "./ScoutQuickPicker";
 import { ScoutAddEntryForm } from "./ScoutAddEntryForm";
-import { ScoutSystemReportForm } from "./ScoutSystemReportForm";
+import { ScoutReportLevels, ScoutSystemReportForm } from "./ScoutSystemReportForm";
 import { SYSTEM_STATE_COLORS } from "./scoutZoneColors";
 import { ScoutEntryList } from "./ScoutEntryList";
 import { OverlayWithLock } from "./OverlayWithLock";
@@ -56,6 +56,7 @@ export function ScoutSection() {
 
   const activeSystem = systemOverride ?? autoSystem ?? "";
   const catalog = useMemo(() => buildZoneCatalog(sites), [sites]);
+  const systemReport = useMemo(() => findSystemReport(entries, activeSystem), [entries, activeSystem]);
 
   useEffect(() => {
     window.efOverlay?.scout?.getSites?.().then(setSites).catch(() => setSites([]));
@@ -153,6 +154,31 @@ export function ScoutSection() {
   async function handleAddEntry(input: CreateScoutEntryInput) {
     try {
       await window.efOverlay?.scout?.create?.(input);
+      await loadEntries();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** One report entry per system: update it in place, delete it when emptied, create it on first value. */
+  async function handleSaveReport(report: SystemReport, notes: string | undefined) {
+    if (!activeSystem) return;
+    const scout = window.efOverlay?.scout;
+    const isEmpty = Object.keys(report).length === 0 && !notes;
+    try {
+      if (systemReport) {
+        if (isEmpty) await scout?.delete?.(systemReport.id);
+        else await scout?.update?.(systemReport.id, { report, notes: notes ?? "" });
+      } else if (!isEmpty) {
+        await scout?.create?.({
+          system: activeSystem,
+          type: "system",
+          visibility: settings.defaultVisibility,
+          reporter: "manual",
+          report,
+          ...(notes && { notes }),
+        });
+      }
       await loadEntries();
     } catch {
       /* ignore */
@@ -324,9 +350,17 @@ export function ScoutSection() {
           onAdd={(input) => void handleAddEntry(input)}
           onRemove={(id) => void handleRemoveEntry(id)}
         />
+        {/* System report levels: only visible in game UI, so one click each */}
+        <div className="mt-3 pt-3 border-t border-border/30">
+          <ScoutReportLevels
+            system={activeSystem}
+            report={systemReport?.report}
+            onSave={(report) => void handleSaveReport(report, systemReport?.notes)}
+          />
+        </div>
       </div>
 
-      {/* System report: values only visible in game UI (ef-map collects the same) */}
+      {/* System report: planets, spectral class (Show Info) */}
       <div className="mb-3">
         <button
           type="button"
@@ -334,14 +368,15 @@ export function ScoutSection() {
           className="flex items-center gap-1.5 text-xs text-muted hover:text-text cursor-pointer bg-transparent border-0 p-0 mb-2"
         >
           <span>{reportOpen ? "▾" : "▸"}</span>
-          <span>System report (planets, spectral class, transient mass, infestation)</span>
+          <span>System details (planets, spectral class, notes)</span>
         </button>
         {reportOpen && (
           <div className="p-3 rounded-md border border-border/40 bg-bg/20">
             <ScoutSystemReportForm
-              currentSystem={activeSystem}
-              defaultVisibility={settings.defaultVisibility}
-              onSubmit={(input) => void handleAddEntry(input)}
+              system={activeSystem}
+              report={systemReport?.report}
+              notes={systemReport?.notes}
+              onSave={(report, notes) => void handleSaveReport(report, notes)}
             />
           </div>
         )}
