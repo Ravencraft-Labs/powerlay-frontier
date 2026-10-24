@@ -1,7 +1,37 @@
-import React from "react";
+import React, { useState } from "react";
 import type { ProductionStage } from "@powerlay/core";
+import type { CraftStep } from "../utils/craftStep";
 import { ItemIcon } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
+
+/**
+ * Inline editor for an item's ±N step. Enter/blur saves (empty = back to default -> null),
+ * Escape cancels (undefined).
+ */
+function StepSizeInput({ initial, onDone }: { initial?: number; onDone: (size: number | null | undefined) => void }) {
+  const [text, setText] = useState(initial != null ? String(initial) : "");
+  const commit = () => {
+    const n = Math.floor(Number(text));
+    onDone(text.trim() === "" ? null : n > 0 ? n : undefined);
+  };
+  return (
+    <input
+      type="number"
+      min={1}
+      autoFocus
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") onDone(undefined);
+      }}
+      placeholder="step"
+      title="Your step for this item; leave empty for the default"
+      className="w-16 px-1.5 py-0.5 rounded border border-amber-500/60 bg-bg text-text text-xs text-right focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  );
+}
 
 interface Props {
   stages: ProductionStage[];
@@ -11,6 +41,13 @@ interface Props {
   active: number;
   miningPct: number;
   made: Record<number, number>;
+  /** typeID -> ±N step (the user's own, or one run/job from game data). */
+  batches?: Record<number, CraftStep>;
+  /** Set the user's step for an item; null = back to the default. Enables right-click editing. */
+  onStepChange?: (typeID: number, size: number | null) => void;
+  /** Move to the next unfinished step when the shown one is done. */
+  autoAdvance?: boolean;
+  onAutoAdvanceChange?: (on: boolean) => void;
   onMadeChange: (typeID: number, made: number) => void;
   /** Show this step; it stays until everything in it is done, then the next unfinished one shows. */
   onPick: (step: number) => void;
@@ -31,15 +68,21 @@ const tabCls = (active: boolean, done: boolean) =>
         : "border-border text-text hover:bg-border bg-transparent"
   }`;
 
+const stepBtnCls =
+  "min-w-[2rem] px-1.5 py-0.5 text-xs rounded border border-border text-muted hover:text-text hover:bg-border bg-transparent cursor-pointer disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent";
+
 const HELP = (
   <>
     <p className="font-semibold mb-1">How to use</p>
     <p className="mb-2 text-muted text-xs">
       The build is split into steps from the production tree: <strong>Mining</strong>, then each crafting level up to the
-      planned items. Crafting is not in the game logs, so enter what you made or tick <strong>done</strong>.
+      planned items. Crafting is not in the game logs, so enter what you made, use <strong>±1</strong> /{" "}
+      <strong>±N</strong>, or tick <strong>done</strong>. N is one refining run, or one full printer job (hover to see
+      which); right-click a ± button to set your own N for that item.
     </p>
     <p className="text-muted text-xs">
-      The current step moves on by itself when everything in it is done. Click a step to switch to it.
+      With <strong>Auto-advance</strong> on, the current step moves on by itself when everything in it is done;
+      turn it off to stay on the step you picked. Click a step to switch to it.
     </p>
   </>
 );
@@ -51,6 +94,10 @@ export function BuildStagesTracker({
   active,
   miningPct,
   made,
+  batches = {},
+  onStepChange,
+  autoAdvance = true,
+  onAutoAdvanceChange,
   onMadeChange,
   onPick,
   onReset,
@@ -59,6 +106,7 @@ export function BuildStagesTracker({
   overlayVisible = false,
   onToggleOverlay,
 }: Props) {
+  const [editingStepFor, setEditingStepFor] = useState<number | null>(null);
   if (stages.length === 0) return null;
   const stage = active > 0 ? stages[active - 1] : undefined;
   const hasProgress = Object.keys(made).length > 0;
@@ -79,6 +127,20 @@ export function BuildStagesTracker({
             >
               Overlay
             </button>
+          )}
+          {!free && onAutoAdvanceChange && (
+            <label
+              className="flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none"
+              title="Move to the next unfinished step when the shown one is done"
+            >
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={(e) => onAutoAdvanceChange(e.target.checked)}
+                className="rounded border-border"
+              />
+              Auto-advance
+            </label>
           )}
           {hasProgress && (
             <button
@@ -141,15 +203,55 @@ export function BuildStagesTracker({
                 <div className="flex-1 min-w-0 h-1.5 rounded-full bg-amber-500/40 overflow-hidden">
                   <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${progress * 100}%` }} />
                 </div>
-                <input
-                  type="number"
-                  min={0}
-                  value={value}
-                  onChange={(e) => onMadeChange(item.typeID, Number(e.target.value) || 0)}
-                  className="w-16 px-1.5 py-0.5 rounded border border-border-input bg-bg text-text text-xs text-right focus:outline-none focus:border-muted"
-                  title="Units made"
-                />
-                <span className="text-xs text-muted shrink-0">/ {fmt(item.quantity)}</span>
+                {(() => {
+                  const batch = batches[item.typeID];
+                  const add = (delta: number) => onMadeChange(item.typeID, Math.min(item.quantity, Math.max(0, value + delta)));
+                  const stepBtn = (delta: number, title: string) => (
+                    <button
+                      type="button"
+                      className={stepBtnCls}
+                      disabled={delta < 0 ? value <= 0 : value >= item.quantity}
+                      onClick={() => add(delta)}
+                      onContextMenu={(e) => {
+                        if (!onStepChange) return;
+                        e.preventDefault();
+                        setEditingStepFor(item.typeID);
+                      }}
+                      title={title}
+                    >
+                      {delta > 0 ? `+${delta}` : `−${-delta}`}
+                    </button>
+                  );
+                  const unitTitle = onStepChange ? "One unit (right-click to set your step)" : "One unit";
+                  const stepTitle = batch ? (onStepChange ? `${batch.title} (right-click to change)` : batch.title) : "";
+                  return (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {batch && stepBtn(-batch.size, stepTitle)}
+                      {stepBtn(-1, unitTitle)}
+                      <input
+                        type="number"
+                        min={0}
+                        value={value}
+                        onChange={(e) => onMadeChange(item.typeID, Number(e.target.value) || 0)}
+                        className="w-16 px-1.5 py-0.5 rounded border border-border-input bg-bg text-text text-xs text-right focus:outline-none focus:border-muted [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        title="Units made"
+                      />
+                      {stepBtn(1, unitTitle)}
+                      {editingStepFor === item.typeID && onStepChange ? (
+                        <StepSizeInput
+                          initial={batch?.size}
+                          onDone={(size) => {
+                            if (size !== undefined) onStepChange(item.typeID, size);
+                            setEditingStepFor(null);
+                          }}
+                        />
+                      ) : (
+                        batch && stepBtn(batch.size, stepTitle)
+                      )}
+                      <span className="text-xs text-muted ml-1">/ {fmt(item.quantity)}</span>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

@@ -184,8 +184,8 @@ interface BuilderOverlayState {
   miningOres?: MiningOreItem[];
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
-  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
-  steps?: { active: number; first: number; last: number };
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string }> };
+  steps?: { active: number; first: number; last: number; auto: boolean };
 }
 let builderOverlayStateByBuild: Record<string, BuilderOverlayState> = {};
 
@@ -362,11 +362,12 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
   const savedBounds = loadBuilderOverlayBounds(buildId);
   let x: number | undefined = savedBounds?.x;
   let y: number | undefined = savedBounds?.y;
+  // Rows hold ±N/±1 buttons around the count (BuildTrackingOverlay asks for min 400px).
+  const defaultWidth = 400;
+  const defaultHeight = 300;
 
   if (x == null || y == null) {
     const allBuilderWindows = Array.from(builderOverlayWindows.values()).filter((win) => !win.isDestroyed());
-    const defaultWidth = 320;
-    const defaultHeight = 300;
     const workArea = screen.getPrimaryDisplay().workArea;
 
     if (allBuilderWindows.length > 0) {
@@ -393,8 +394,8 @@ function getOrCreateBuilderOverlayWindow(buildId: string): BrowserWindow {
   }
 
   const opts: Electron.BrowserWindowConstructorOptions = {
-    width: savedBounds?.width ?? 320,
-    height: savedBounds?.height ?? 300,
+    width: savedBounds?.width ?? defaultWidth,
+    height: savedBounds?.height ?? defaultHeight,
     x,
     y,
     frame: false,

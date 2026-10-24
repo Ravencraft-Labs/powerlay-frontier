@@ -149,6 +149,18 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
     [api?.overlay, buildId, load]
   );
 
+  // Free build: the ± buttons change "needed" instead of "made" while this is on.
+  const [neededMode, setNeededMode] = useState(false);
+
+  const addNeeded = useCallback(
+    (typeID: number, delta: number) => {
+      if (!buildId) return;
+      api?.overlay?.sendBuilderAction?.(buildId, { kind: "needed-add", typeID, delta });
+      setTimeout(load, 150);
+    },
+    [api?.overlay, buildId, load]
+  );
+
   const setAuto = useCallback(
     (on: boolean) => {
       if (!buildId) return;
@@ -222,6 +234,8 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
   const miningOres = state.miningOres ?? [];
   const steps = state.steps;
   const hasStepSwitcher = !!steps && steps.last > steps.first;
+  // A free build has no mining step (its steps start at 1).
+  const isFreeBuild = steps?.first === 1;
   const activeStep = pendingStep ?? steps?.active ?? 0;
   // Until the desktop confirms a picked step, the lists below still belong to the previous one.
   const syncing = pendingStep != null && pendingStep !== steps?.active;
@@ -284,12 +298,31 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
       ?
     </button>
   ) : undefined;
+  // Free build only: its "needed" is the planned quantity, which the overlay may change.
+  const neededButton =
+    isFreeBuild && stage ? (
+      <button
+        type="button"
+        className={`w-7 h-7 flex items-center justify-center rounded text-xs transition-colors ${
+          neededMode ? "text-amber-500 bg-amber-500/10 hover:bg-amber-500/20" : "text-muted hover:text-text hover:bg-border"
+        }`}
+        onClick={() => setNeededMode((v) => !v)}
+        title={neededMode ? "Editing how many are needed — click to go back to counting made" : "Edit how many are needed"}
+      >
+        ✎
+      </button>
+    ) : undefined;
 
   return (
     <OverlayFrame
       title={titleWithDot}
       buildId={buildId}
-      headerActions={oreHintsButton}
+      headerActions={
+        <>
+          {neededButton}
+          {oreHintsButton}
+        </>
+      }
       // Rows hold ±N/±1 buttons around the count; keep in sync with the default width in electron-shell main.ts.
       widthClassName="min-w-[400px] max-w-[460px]"
     >
@@ -398,15 +431,31 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                   {/* Minus buttons left of the count, plus buttons right of it, so they are hard to mix up. */}
                   {(() => {
                     const editable = !locked && item.typeID != null;
+                    // "Needed" mode (free builds): the same buttons change how many are planned.
+                    const editNeeded = editable && neededMode;
                     const stepBtn = (delta: number) => (
                       <button
                         key={delta}
                         type="button"
-                        disabled={delta < 0 ? item.made <= 0 : item.made >= item.needed}
-                        onClick={() => addMade(item.typeID!, delta)}
-                        className="min-w-[1.75rem] h-6 px-1.5 text-[11px] rounded border border-border/60 text-muted hover:text-text hover:bg-border disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={
+                          editNeeded
+                            ? delta < 0 && item.needed <= 1
+                            : delta < 0 ? item.made <= 0 : item.made >= item.needed
+                        }
+                        onClick={() => (editNeeded ? addNeeded(item.typeID!, delta) : addMade(item.typeID!, delta))}
+                        className={`min-w-[1.75rem] h-6 px-1.5 text-[11px] rounded border disabled:opacity-30 disabled:hover:bg-transparent ${
+                          editNeeded
+                            ? "border-amber-500/60 text-amber-500 hover:bg-amber-500/20"
+                            : "border-border/60 text-muted hover:text-text hover:bg-border"
+                        }`}
                         // Overlays can't take typing on Windows (non-focusable), so the step is set in the app.
-                        title={Math.abs(delta) === 1 ? "One unit" : `${item.batchTitle ?? "Your step"} (set your own in the app)`}
+                        title={
+                          editNeeded
+                            ? "Change how many are needed"
+                            : Math.abs(delta) === 1
+                              ? "One unit"
+                              : `${item.batchTitle ?? "Your step"} (set your own in the app)`
+                        }
                       >
                         {delta > 0 ? `+${delta}` : `−${-delta}`}
                       </button>
@@ -416,7 +465,10 @@ export function BuildTrackingOverlay({ buildId }: BuildTrackingOverlayProps) {
                         {editable && item.batch != null && stepBtn(-item.batch)}
                         {editable && stepBtn(-1)}
                         <span className="px-1 text-center tabular-nums">
-                          {formatCompact(item.made)} / {formatCompact(item.needed)}
+                          {formatCompact(item.made)} /{" "}
+                          <span className={editNeeded ? "text-amber-500 font-semibold" : undefined}>
+                            {formatCompact(item.needed)}
+                          </span>
                         </span>
                         {editable && stepBtn(1)}
                         {editable && item.batch != null && stepBtn(item.batch)}

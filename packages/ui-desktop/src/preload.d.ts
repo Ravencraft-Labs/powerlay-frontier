@@ -17,6 +17,7 @@ import type {
   ScoutVisibility,
   ScoutActivityEvent,
   ScoutSiteDef,
+  FacilityRuns,
   SystemState,
 } from "@powerlay/core";
 
@@ -110,7 +111,10 @@ export interface ConnectedStorage {
  */
 export type BuilderOverlayAction =
   | { kind: "ore-done" | "item-done"; typeID: number; done: boolean }
-  | { kind: "pick-step"; step: number | null };
+  | { kind: "item-add"; typeID: number; delta: number }
+  | { kind: "pick-step"; step: number | null }
+  | { kind: "set-auto"; on: boolean }
+  | { kind: "needed-add"; typeID: number; delta: number };
 
 /** What the desktop sends to a build overlay window. */
 export interface BuilderOverlayState {
@@ -121,9 +125,9 @@ export interface BuilderOverlayState {
   miningOres?: Array<{ typeID?: number; name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
   plannedVolByTypeId?: Record<number, number>;
   /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
-  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number }> };
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string }> };
   /** Steps the overlay can switch between: `active` in first..last (0 = mining). */
-  steps?: { active: number; first: number; last: number };
+  steps?: { active: number; first: number; last: number; auto: boolean };
 }
 
 export interface GameDataErrors {
@@ -138,6 +142,8 @@ export interface GameData {
   starSystems: string[];
   /** blueprintTypeID -> comma-separated facility names */
   blueprintToFacilityNames: Record<number, string>;
+  /** blueprintID -> per facility type, max output runs of one job (absent on older shells). */
+  blueprintFacilityRuns?: Record<number, FacilityRuns[]>;
   /** Facility type names from industry_facilities */
   facilityTypeNames: string[];
   /** groupIDs for mineable ores. Empty = no filtering. */

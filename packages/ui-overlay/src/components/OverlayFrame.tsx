@@ -21,6 +21,8 @@ export interface OverlayFrameProps {
   buildId?: string | null;
   /** Extra header buttons, shown before lock/close while unlocked (a locked overlay is click-through). */
   headerActions?: React.ReactNode;
+  /** Tailwind min/max width classes; default OVERLAY_FRAME_CLASSES.width. */
+  widthClassName?: string;
 }
 
 function LockClosedIcon({ className }: { className?: string }) {
@@ -56,7 +58,7 @@ function CloseIcon({ className }: { className?: string }) {
  * When unlocked: shows lock and close buttons and a resize grip. When locked: hides all interactive buttons.
  * Once resized with the grip the frame keeps that size (content scrolls) until the grip is double-clicked.
  */
-export function OverlayFrame({ title, children, buildId, headerActions }: OverlayFrameProps) {
+export function OverlayFrame({ title, children, buildId, headerActions, widthClassName }: OverlayFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [locked, setLocked] = useState(false);
   const [bgOpacity, setBgOpacity] = useState(92);
@@ -133,7 +135,7 @@ export function OverlayFrame({ title, children, buildId, headerActions }: Overla
   return (
     <div
       ref={containerRef}
-      className={`${OVERLAY_FRAME_CLASSES.container} relative ${userSize ? "flex flex-col" : ""}`}
+      className={`${OVERLAY_FRAME_CLASSES.container} ${widthClassName ?? OVERLAY_FRAME_CLASSES.width} relative ${userSize ? "flex flex-col" : ""}`}
       style={{
         backgroundColor: `color-mix(in srgb, var(--color-bg) ${bgOpacity}%, transparent)`,
         ...(userSize && { width: userSize.w, height: userSize.h, minWidth: 0, maxWidth: "none" }),

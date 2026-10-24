@@ -35,14 +35,14 @@ export interface BuilderOverlayState {
   /** Active crafting stage once mining is done (or picked by hand); absent while on mining. */
   stage?: BuilderStageState;
   /** Steps to switch between: `active` in first..last (0 = mining). */
-  steps?: { active: number; first: number; last: number };
+  steps?: { active: number; first: number; last: number; auto: boolean };
 }
 
 /** Crafting stage `index` of `count` (1-based; 0 would be mining) with made/needed units per item. */
 export interface BuilderStageState {
   index: number;
   count: number;
-  items: Array<{ typeID?: number; name: string; made: number; needed: number }>;
+  items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string }>;
 }
 
 /** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
@@ -81,7 +81,7 @@ export interface EFOverlayAPI {
   overlay?: {
     getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
     /** Mark an ore mined / a crafted item made (or undo) in the desktop app. */
-    sendBuilderAction?: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "pick-step"; step: number | null }) => void;
+    sendBuilderAction?: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "item-add"; typeID: number; delta: number } | { kind: "pick-step"; step: number | null } | { kind: "set-auto"; on: boolean } | { kind: "needed-add"; typeID: number; delta: number }) => void;
     toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     setContentSize: (frame: OverlayShellFrame, width: number, height: number, buildId?: string) => void;
     hide?: (frame: OverlayShellFrame, buildId?: string) => Promise<void>;

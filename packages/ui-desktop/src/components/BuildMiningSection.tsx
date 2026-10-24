@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { BuildPlan, ProductionStage, ProductionTreeNode } from "@powerlay/core";
+import type { BuildPlan, ProductionStage, ProductionStageItem, ProductionTreeNode } from "@powerlay/core";
 import {
   totalManufacturingTimeSeconds,
   buildProductionTree,
@@ -7,12 +7,14 @@ import {
   totalVolumeFromMaterials,
   buildProductionStages,
   plannedItemsStage,
+  jobBatchSize,
   isStageComplete,
   oreMiningProgress,
   activeTrackingStage,
 } from "@powerlay/core";
 import type { BuilderOverlayAction, BuilderOverlayState, GameData } from "../preload";
 import { formatProductionTime } from "../utils/format";
+import { effectiveCraftStep } from "../utils/craftStep";
 import { BuildPage } from "./BuildPage";
 
 function EditIcon({ className }: { className?: string }) {
@@ -68,6 +70,10 @@ const MINING_NEEDED_OVERRIDE_KEY = "powerlay-mining-needed-override";
 const SELECTED_BUILD_KEY = "powerlay-selected-build";
 const CRAFTED_KEY = "powerlay-crafting-made";
 const STAGE_PIN_KEY = "powerlay-tracking-stage";
+/** typeID -> the user's own ±N step (same for every build: it is how much they make at once). */
+const CRAFT_STEP_KEY = "powerlay-crafting-step";
+/** "off" = keep the step that is shown instead of moving on when it is done (all builds). */
+const AUTO_ADVANCE_KEY = "powerlay-steps-auto";
 
 interface ProductionTimerState {
   buildId: string;
@@ -244,6 +250,34 @@ export function BuildMiningSection() {
   const [miningMinedFromLog, setMiningMinedFromLog] = useState<Record<string, Record<number, number>>>({});
   const [craftedMade, setCraftedMade] = useState<CraftedByType>(() => loadJsonObject<CraftedByType>(CRAFTED_KEY));
   const [stagePins, setStagePins] = useState<StagePinByBuild>(() => loadJsonObject<StagePinByBuild>(STAGE_PIN_KEY));
+  const [craftSteps, setCraftSteps] = useState<Record<number, number>>(() => loadJsonObject<Record<number, number>>(CRAFT_STEP_KEY));
+  const [autoAdvance, setAutoAdvance] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(AUTO_ADVANCE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+
+  const handleAutoAdvanceChange = useCallback((on: boolean) => {
+    setAutoAdvance(on);
+    try {
+      localStorage.setItem(AUTO_ADVANCE_KEY, on ? "on" : "off");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Set the user's ±N step for an item; null or ≤ 0 goes back to the default from game data. */
+  const handleCraftStepChange = useCallback((typeID: number, size: number | null) => {
+    setCraftSteps((prev) => {
+      const next = { ...prev };
+      if (size == null || !(size > 0)) delete next[typeID];
+      else next[typeID] = Math.floor(size);
+      saveJsonObject(CRAFT_STEP_KEY, next);
+      return next;
+    });
+  }, []);
   const [miningErrors, setMiningErrors] = useState<{
     tailerTestError?: string;
     logReaderError?: string;
@@ -450,6 +484,31 @@ export function BuildMiningSection() {
     }
   }, []);
 
+  // Latest builds, updated synchronously by overlay edits so quick clicks before a re-render add up.
+  const buildsRef = useRef(builds);
+  buildsRef.current = builds;
+
+  /** Free build, overlay "needed" mode: change how many of an item are planned (never below 1). */
+  const handleNeededDelta = useCallback((buildId: string, typeID: number, delta: number) => {
+    const build = buildsRef.current.find((b) => b.id === buildId);
+    if (!build?.freeTracking) return;
+    const idx = build.plannedItems.findIndex((p) => p.typeID === typeID);
+    if (idx < 0) return;
+    const total = build.plannedItems.reduce((sum, p) => sum + (p.typeID === typeID ? p.quantity : 0), 0);
+    const change = Math.max(1, total + delta) - total;
+    if (change === 0) return;
+    const plannedItems = build.plannedItems.map((p, i) =>
+      i === idx ? { ...p, quantity: Math.max(0, p.quantity + change) } : p
+    );
+    const updated: BuildPlan = { ...build, plannedItems, updatedAt: Date.now() };
+    const list = buildsRef.current.map((b) => (b.id === buildId ? updated : b));
+    buildsRef.current = list;
+    setBuilds(list);
+    setSelectedBuild((prev) => (prev?.id === buildId ? updated : prev));
+    // Not awaited into state: a slower earlier save must not roll back a later click.
+    void saveBuild(updated);
+  }, []);
+
   const handleSaveBuild = useCallback(async (plan: BuildPlan) => {
     const saved = await saveBuild(plan);
     setBuilds((prev) => {
@@ -598,6 +657,21 @@ export function BuildMiningSection() {
     return { stages, completed, active: activeTrackingStage(completed, stagePins[build.id]) };
   }
 
+  /** Overlay ±N buttons: units one facility job makes for this item (build's facility, else the smallest). */
+  function batchFields(build: BuildPlan, item: ProductionStageItem): { batch?: number; batchTitle?: string } {
+    if (!gameData?.types || !gameData?.blueprints) return {};
+    const def = jobBatchSize(
+      item.typeID,
+      item.blueprintTypeID,
+      gameData.blueprints,
+      gameData.types,
+      gameData.blueprintFacilityRuns ?? {},
+      build.facilities.map((f) => f.type)
+    );
+    const step = effectiveCraftStep(def, craftSteps[item.typeID]);
+    return step ? { batch: step.size, batchTitle: step.title } : {};
+  }
+
   // Done/undone ticks from a build overlay; same effect as the checkboxes in Tracking.
   const applyOverlayActionRef = useRef<(buildId: string, action: BuilderOverlayAction) => void>(() => {});
   applyOverlayActionRef.current = (buildId, action) => {
@@ -605,6 +679,10 @@ export function BuildMiningSection() {
     if (!build || !gameData?.types) return;
     if (action.kind === "pick-step") {
       handleStagePin(buildId, action.step);
+    } else if (action.kind === "needed-add") {
+      handleNeededDelta(buildId, action.typeID, action.delta);
+    } else if (action.kind === "set-auto") {
+      handleAutoAdvanceChange(action.on);
     } else if (action.kind === "ore-done") {
       const ore = computeBaseMaterials(build).find((m) => m.typeID === action.typeID);
       if (!ore) return;
@@ -613,7 +691,20 @@ export function BuildMiningSection() {
       handleMiningManualChange(buildId, ore.typeID, action.done ? needed : 0);
     } else {
       const item = computeTrackingStep(build).stages.flatMap((s) => s.items).find((i) => i.typeID === action.typeID);
-      if (item) handleCraftedChange(buildId, item.typeID, action.done ? item.quantity : 0);
+      if (!item) return;
+      if (action.kind !== "item-add") {
+        handleCraftedChange(buildId, item.typeID, action.done ? item.quantity : 0);
+      } else {
+        // Functional update: several quick clicks can arrive before the next render.
+        const { delta } = action;
+        setCraftedMade((prev) => {
+          const made = prev[buildId]?.[item.typeID] ?? 0;
+          const value = Math.min(item.quantity, Math.max(0, made + delta));
+          const next = { ...prev, [buildId]: { ...(prev[buildId] ?? {}), [item.typeID]: value } };
+          saveJsonObject(CRAFTED_KEY, next);
+          return next;
+        });
+      }
     }
   };
   useEffect(() => {
@@ -622,11 +713,20 @@ export function BuildMiningSection() {
     return subscribe((buildId, action) => applyOverlayActionRef.current(buildId, action));
   }, []);
 
-  // Finishing the step the user picked moves on: drop the pin when that step turns complete.
+  // Auto-advance on: finishing the step the user picked moves on (drop the pin when it turns complete).
+  // Auto-advance off: hold whatever step is shown (pin it, so finishing it doesn't move on).
   const pinnedWasCompleteRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
     for (const build of builds) {
       const pin = stagePins[build.id];
+      if (!autoAdvance) {
+        if (pin == null) {
+          const step = computeTrackingStep(build);
+          if (step.stages.length > 0) handleStagePin(build.id, step.active);
+        }
+        delete pinnedWasCompleteRef.current[build.id];
+        continue;
+      }
       if (pin == null) {
         delete pinnedWasCompleteRef.current[build.id];
         continue;
@@ -636,7 +736,7 @@ export function BuildMiningSection() {
       pinnedWasCompleteRef.current[build.id] = done;
       if (was === false && done) handleStagePin(build.id, null);
     }
-  }, [builds, stagePins, craftedMade, miningMinedFromLog, miningMinedManual, miningNeededOverride, gameData]);
+  }, [builds, stagePins, autoAdvance, craftedMade, miningMinedFromLog, miningMinedManual, miningNeededOverride, gameData]);
 
   const handlePlayTimer = useCallback(
     (build: BuildPlan) => {
@@ -774,6 +874,7 @@ export function BuildMiningSection() {
             name: i.name,
             made: Math.min(madeByType[i.typeID] ?? 0, i.quantity),
             needed: i.quantity,
+            ...batchFields(build, i),
           })),
         },
         steps:
@@ -783,12 +884,13 @@ export function BuildMiningSection() {
                 // A free build has no mining step.
                 first: build.freeTracking ? 1 : 0,
                 last: step.stages.length,
+                auto: autoAdvance,
               }
             : undefined,
       };
     }
     api(states);
-  }, [builds, buildsWithOverlayOpen, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, craftedMade, stagePins, tick, gameData]);
+  }, [builds, buildsWithOverlayOpen, timerState, miningMinedFromLog, miningMinedManual, miningNeededOverride, craftedMade, stagePins, craftSteps, autoAdvance, tick, gameData]);
 
   return (
     <div className="flex flex-1 min-h-0 min-w-0">
@@ -989,6 +1091,10 @@ export function BuildMiningSection() {
             onCraftedChange={handleCraftedChange}
             onStagePin={handleStagePin}
             onCraftingReset={handleCraftingReset}
+            craftSteps={craftSteps}
+            onCraftStepChange={handleCraftStepChange}
+            autoAdvance={autoAdvance}
+            onAutoAdvanceChange={handleAutoAdvanceChange}
           />
         )}
       </div>

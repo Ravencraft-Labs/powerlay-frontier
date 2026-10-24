@@ -69,11 +69,11 @@ contextBridge.exposeInMainWorld("efOverlay", {
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>; plannedVolByTypeId?: Record<number, number> }>) =>
       ipcRenderer.send("overlay:set-builder-state", states),
     /** Build overlay: mark an ore mined / a crafted item made (or undo) in the desktop app. */
-    sendBuilderAction: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "pick-step"; step: number | null }) =>
+    sendBuilderAction: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "item-add"; typeID: number; delta: number } | { kind: "pick-step"; step: number | null } | { kind: "set-auto"; on: boolean } | { kind: "needed-add"; typeID: number; delta: number }) =>
       ipcRenderer.send("overlay:builder-action", buildId, action),
     /** Desktop: receive build overlay actions. Returns an unsubscribe. */
-    onBuilderAction: (cb: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "pick-step"; step: number | null }) => void) => {
-      const handler = (_e: unknown, buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "pick-step"; step: number | null }) =>
+    onBuilderAction: (cb: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "item-add"; typeID: number; delta: number } | { kind: "pick-step"; step: number | null } | { kind: "set-auto"; on: boolean } | { kind: "needed-add"; typeID: number; delta: number }) => void) => {
+      const handler = (_e: unknown, buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "item-add"; typeID: number; delta: number } | { kind: "pick-step"; step: number | null } | { kind: "set-auto"; on: boolean } | { kind: "needed-add"; typeID: number; delta: number }) =>
         cb(buildId, action);
       ipcRenderer.on("builder:overlay-action", handler);
       return () => ipcRenderer.removeListener("builder:overlay-action", handler);

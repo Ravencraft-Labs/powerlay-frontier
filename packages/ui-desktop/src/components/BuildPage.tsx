@@ -28,6 +28,7 @@ import {
   timeToRefineFromAmount,
   buildProductionStages,
   plannedItemsStage,
+  jobBatchSize,
   isStageComplete,
   oreMiningProgress,
   activeTrackingStage,
@@ -37,6 +38,7 @@ import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime
 import { ItemIcon, useIconsBaseUrl } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
 import { BuildStagesTracker } from "./BuildStagesTracker";
+import { effectiveCraftStep, type CraftStep } from "../utils/craftStep";
 
 const DEBOUNCE_MS = 500;
 const TOOLTIP_DELAY_MS = 150;
@@ -120,6 +122,12 @@ interface BuildPageProps {
   onCraftedChange?: (buildId: string, typeID: number, made: number) => void;
   onStagePin?: (buildId: string, step: number | null) => void;
   onCraftingReset?: (buildId: string) => void;
+  /** typeID -> the user's own ±N step. */
+  craftSteps?: Record<number, number>;
+  onCraftStepChange?: (typeID: number, size: number | null) => void;
+  /** Move to the next unfinished step when the shown one is done (all builds). */
+  autoAdvance?: boolean;
+  onAutoAdvanceChange?: (on: boolean) => void;
 }
 
 function normalizePlan(p: BuildPlan): BuildPlan {
@@ -1235,6 +1243,10 @@ export function BuildPage({
   onCraftedChange,
   onStagePin,
   onCraftingReset,
+  craftSteps = {},
+  onCraftStepChange,
+  autoAdvance = true,
+  onAutoAdvanceChange,
 }: BuildPageProps) {
   const normalizedPlan = normalizePlan(plan);
   const [local, setLocal] = useState<BuildPlan>(() => normalizedPlan);
@@ -1356,6 +1368,24 @@ export function BuildPage({
           : buildProductionStages(productionTree, gameData.types),
     [isFree, local.plannedItems, productionTree, gameData?.types]
   );
+  const batchByType = useMemo(() => {
+    const out: Record<number, CraftStep> = {};
+    if (!gameData?.types || !gameData?.blueprints) return out;
+    const facilityTypes = local.facilities.map((f) => f.type);
+    for (const item of productionStages.flatMap((s) => s.items)) {
+      const def = jobBatchSize(
+        item.typeID,
+        item.blueprintTypeID,
+        gameData.blueprints,
+        gameData.types,
+        gameData.blueprintFacilityRuns ?? {},
+        facilityTypes
+      );
+      const step = effectiveCraftStep(def, craftSteps[item.typeID]);
+      if (step) out[item.typeID] = step;
+    }
+    return out;
+  }, [productionStages, local.facilities, craftSteps, gameData?.types, gameData?.blueprints, gameData?.blueprintFacilityRuns]);
   const madeForPlan = craftedMade[plan.id] ?? {};
   const miningForPlan = gameData?.types && !isFree
     ? oreMiningProgress(
@@ -1715,6 +1745,10 @@ export function BuildPage({
               active={activeStep}
               miningPct={miningForPlan.needed > 0 ? Math.min(100, Math.floor((miningForPlan.mined / miningForPlan.needed) * 100)) : 100}
               made={madeForPlan}
+              batches={batchByType}
+              onStepChange={onCraftStepChange}
+              autoAdvance={autoAdvance}
+              onAutoAdvanceChange={onAutoAdvanceChange}
               onMadeChange={(typeID, made) => onCraftedChange?.(plan.id, typeID, made)}
               onPick={(step) => onStagePin?.(plan.id, step)}
               onReset={() => onCraftingReset?.(plan.id)}
