@@ -13,6 +13,7 @@ import {
   timeToRefineOre,
   searchTypesByName,
   getProducibleTypeIds,
+  collectBlueprintParticipantTypeIds,
   getBlueprintOptionsForProduct,
   totalMaterialsFromPlannedItems,
   totalMassFromMaterials,
@@ -1436,6 +1437,13 @@ export function BuildPage({
     return new Set(getProducibleTypeIds(gameData.types, gameData.blueprints).map((t) => t.typeID));
   }, [gameData?.types, gameData?.blueprints]);
 
+  // Free build tracks anything by hand, so its item search also offers recipe inputs: ores, salvage, drops.
+  const industryTypeIds = useMemo(() => {
+    if (!producibleTypeIds || !gameData?.blueprints) return producibleTypeIds;
+    const { materialTypeIds } = collectBlueprintParticipantTypeIds(gameData.blueprints);
+    return new Set([...producibleTypeIds, ...materialTypeIds]);
+  }, [producibleTypeIds, gameData?.blueprints]);
+
   const baseMaterialsList = useMemo(() => {
     if (productionTree.length === 0 || !gameData?.types) return [];
     return getBaseMaterialsFromTrees(productionTree, gameData.types);
@@ -1831,7 +1839,9 @@ export function BuildPage({
                 <ItemSearchWithTypes
                   types={gameData.types}
                   typeID={p.typeID}
-                  producibleTypeIds={producibleTypeIds}
+                  producibleTypeIds={isFree ? industryTypeIds : producibleTypeIds}
+                  // Ores are 1 m³ per unit; the default cutoff would hide them.
+                  volumeMin={isFree ? 0 : 1}
                   onChange={(typeID) =>
                     updatePlannedItem(idx, {
                       ...p,
@@ -2226,11 +2236,15 @@ function ItemSearchWithTypes({
   typeID,
   onChange,
   producibleTypeIds,
+  volumeMin = 1,
 }: {
   types: GameData["types"];
   typeID: number | undefined;
   onChange: (typeID: number) => void;
+  /** Only names with one of these types are offered. */
   producibleTypeIds?: Set<number>;
+  /** Types with volume at or below this are hidden. */
+  volumeMin?: number;
 }) {
   const name = typeID != null ? types[String(typeID)]?.name ?? String(typeID) : "";
   const [query, setQuery] = useState(name);
@@ -2241,9 +2255,9 @@ function ItemSearchWithTypes({
   }, [name]);
 
   const matches = useMemo(() => {
-    const all = searchTypesByName(types, query, { volumeMin: 1, preferTypeIds: producibleTypeIds });
+    const all = searchTypesByName(types, query, { volumeMin, preferTypeIds: producibleTypeIds });
     return all.slice(0, MAX_ITEM_SEARCH_RESULTS);
-  }, [types, query, producibleTypeIds]);
+  }, [types, query, producibleTypeIds, volumeMin]);
 
   const iconsBaseUrl = useIconsBaseUrl();
   const hasTypes = Object.keys(types).length > 0;
