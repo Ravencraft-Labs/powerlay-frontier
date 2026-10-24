@@ -302,17 +302,25 @@ let lastClipboard = "";
 let lastIngested: PocSystemLink[] = [];
 
 export function registerPocMapHandlers(): void {
-  ipcMain.handle("pocMap:watch-clipboard", (_event, on: boolean) => {
+  ipcMain.handle("pocMap:watch-clipboard", async (_event, on: boolean) => {
     if (clipboardTimer) clearInterval(clipboardTimer);
     clipboardTimer = null;
     if (!on) return;
-    lastClipboard = clipboard.readText();
-    clipboardTimer = setInterval(() => {
-      const text = clipboard.readText();
-      if (text === lastClipboard) return;
-      lastClipboard = text;
-      const changed = ingestClipboard(text);
-      if (changed.length > 0) lastIngested = changed;
+    // Clipboard reads are async since Electron 44; skip a tick while the previous read is pending.
+    lastClipboard = await clipboard.readText();
+    let reading = false;
+    clipboardTimer = setInterval(async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const text = await clipboard.readText();
+        if (text === lastClipboard) return;
+        lastClipboard = text;
+        const changed = ingestClipboard(text);
+        if (changed.length > 0) lastIngested = changed;
+      } finally {
+        reading = false;
+      }
     }, 700);
   });
 
@@ -324,16 +332,16 @@ export function registerPocMapHandlers(): void {
     currentSystemId: currentSystemId(),
   }));
 
-  ipcMain.handle("pocMap:add-adjacent", (_event, anchorId: number | null, text?: string) =>
-    addAdjacent(text ?? clipboard.readText(), anchorId),
+  ipcMain.handle("pocMap:add-adjacent", async (_event, anchorId: number | null, text?: string) =>
+    addAdjacent(text ?? (await clipboard.readText()), anchorId),
   );
 
-  ipcMain.handle("pocMap:add-route", (_event, text?: string) => addRoute(text ?? clipboard.readText()));
+  ipcMain.handle("pocMap:add-route", async (_event, text?: string) => addRoute(text ?? (await clipboard.readText())));
 
   ipcMain.handle("pocMap:ingest-text", (_event, text: string) => ingestClipboard(text));
 
-  ipcMain.handle("pocMap:ingest-clipboard", () => {
-    const changed = ingestClipboard(clipboard.readText());
+  ipcMain.handle("pocMap:ingest-clipboard", async () => {
+    const changed = ingestClipboard(await clipboard.readText());
     if (changed.length > 0) lastIngested = changed;
     return changed;
   });

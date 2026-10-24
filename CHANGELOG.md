@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scout: quick-mark sites now come from game data, including the Cycle 7 sites.
 - Builder: each ore shows which asteroids to mine it from, in the app and the build overlay.
 - Builder: crafting steps after mining (refining, components, final items) with progress you enter; the current step moves on when it is done, and the build overlay shows it.
+- Builder: free builds — track any planned items by hand (e.g. 1000 cans) without mining or recipe steps.
+- Build overlay: item icons, a "?" toggle for where-to-mine hints, done checkboxes synced with the app, and step switching.
+
+### Changed
+
+- Electron 28 → 44 (Node 18 → 24): plugins can use built-in `node:sqlite`.
 
 ### Fixed
 
