@@ -9,6 +9,15 @@ const MODULES: Array<{ frame: OverlayShellFrame; label: string }> = [
   { frame: "map", label: "Map" },
 ];
 
+/** Main window tabs → bar items ("builder" is the Builds dropdown). Default = the app's default tab order. */
+type BarItem = OverlayShellFrame;
+const DEFAULT_ORDER: BarItem[] = ["contracts", "builder", "scout", "map"];
+
+function barOrder(tabOrder: string[] | undefined): BarItem[] {
+  const known = (tabOrder ?? []).filter((t): t is BarItem => DEFAULT_ORDER.includes(t as BarItem));
+  return [...new Set([...known, ...DEFAULT_ORDER])];
+}
+
 const EMPTY_STATE: OverlayBarState = { frames: {}, builds: {} };
 
 function LockIcon({ open, size = 12 }: { open?: boolean; size?: number }) {
@@ -101,6 +110,7 @@ export function ToolbarOverlay() {
   const [builds, setBuilds] = useState<Array<{ id: string; name: string; updatedAt: number }>>([]);
   const [buildsOpen, setBuildsOpen] = useState(false);
   const [bgOpacity, setBgOpacity] = useState(92);
+  const [order, setOrder] = useState<BarItem[]>(DEFAULT_ORDER);
 
   const loadBar = useCallback(async () => {
     const s = await api?.overlay?.getBarState?.();
@@ -117,6 +127,8 @@ export function ToolbarOverlay() {
     const load = () => {
       api?.settings?.get?.().then((s) => {
         if (typeof s?.overlayOpacity === "number") setBgOpacity(s.overlayOpacity);
+        const next = barOrder(s?.tabOrder);
+        setOrder((prev) => (prev.join() === next.join() ? prev : next));
       });
     };
     load();
@@ -167,25 +179,34 @@ export function ToolbarOverlay() {
         <span className="flex items-center pr-1.5 mr-0.5 border-r border-border/90" title="Powerlay: drag to move">
           <img src={logoUrl} alt="Powerlay" width={18} height={18} className="rounded-sm" draggable={false} />
         </span>
-        {MODULES.map(({ frame, label }) => (
-          <ToolbarButton
-            key={frame}
-            label={label}
-            state={bar.frames[frame]}
-            onClick={() => run(api?.overlay?.toggle?.(frame))}
-            onToggleLock={() => run(api?.overlay?.toggleLock(frame))}
-            title={`Show/hide the ${label} overlay`}
-          />
-        ))}
-        <ToolbarButton
-          label="Builds"
-          state={openBuilds > 0 ? { visible: true, locked: false } : undefined}
-          onClick={() => setBuildsOpen((o) => !o)}
-          title="Build overlays"
-        >
-          <span className="tabular-nums min-w-[1ch]">{openBuilds > 0 ? openBuilds : ""}</span>
-          <span className="text-[9px]">{buildsOpen ? "▲" : "▼"}</span>
-        </ToolbarButton>
+        {order.map((item) => {
+          if (item === "builder") {
+            return (
+              <ToolbarButton
+                key={item}
+                label="Builds"
+                state={openBuilds > 0 ? { visible: true, locked: false } : undefined}
+                onClick={() => setBuildsOpen((o) => !o)}
+                title="Build overlays"
+              >
+                <span className="tabular-nums min-w-[1ch]">{openBuilds > 0 ? openBuilds : ""}</span>
+                <span className="text-[9px]">{buildsOpen ? "▲" : "▼"}</span>
+              </ToolbarButton>
+            );
+          }
+          const m = MODULES.find((x) => x.frame === item);
+          if (!m) return null;
+          return (
+            <ToolbarButton
+              key={item}
+              label={m.label}
+              state={bar.frames[m.frame]}
+              onClick={() => run(api?.overlay?.toggle?.(m.frame))}
+              onToggleLock={() => run(api?.overlay?.toggleLock(m.frame))}
+              title={`Show/hide the ${m.label} overlay`}
+            />
+          );
+        })}
         <span className="w-px h-4 mx-1 bg-border" />
         <button
           type="button"

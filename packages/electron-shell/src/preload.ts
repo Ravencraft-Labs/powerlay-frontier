@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld("efOverlay", {
       contractsApiBase?: string;
       storageApiBase?: string;
       overlayOpacity?: number;
+      tabOrder?: string[];
     }) =>
       ipcRenderer.invoke("settings:set", settings),
   },

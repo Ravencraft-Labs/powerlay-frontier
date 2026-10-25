@@ -85,6 +85,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showLogLocateModal, setShowLogLocateModal] = useState(false);
   const [draggingTab, setDraggingTab] = useState<TabId | null>(null);
+  /** Tab under the dragged one: the drop lands after it when moving right, before it when moving left. */
+  const [dropTarget, setDropTarget] = useState<TabId | null>(null);
   /** Skip the synthetic click after a successful drop (avoids toggling tab unintentionally). */
   const suppressTabClickRef = useRef(false);
 
@@ -94,6 +96,8 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    // The overlay bar lists its buttons in the same order (it runs in another window, so via settings).
+    void window.efOverlay?.settings?.set({ tabOrder });
   }, [tabOrder]);
 
   useEffect(() => {
@@ -119,15 +123,18 @@ export default function App() {
 
   const onTabDragEnd = useCallback(() => {
     setDraggingTab(null);
+    setDropTarget(null);
   }, []);
 
-  const onTabDragOver = useCallback((e: React.DragEvent) => {
+  const onTabDragOver = useCallback((e: React.DragEvent, id: TabId) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    setDropTarget(id);
   }, []);
 
   const onTabDrop = useCallback((e: React.DragEvent, targetId: TabId) => {
     e.preventDefault();
+    setDropTarget(null);
     const fromId = e.dataTransfer.getData("application/x-powerlay-tab");
     if (!isTabId(fromId) || fromId === targetId) return;
     suppressTabClickRef.current = true;
@@ -160,9 +167,10 @@ export default function App() {
                     title="Drag to reorder tabs"
                     onDragStart={(e) => onTabDragStart(e, id)}
                     onDragEnd={onTabDragEnd}
-                    onDragOver={onTabDragOver}
+                    onDragOver={(e) => onTabDragOver(e, id)}
+                    onDragLeave={() => setDropTarget((t) => (t === id ? null : t))}
                     onDrop={(e) => onTabDrop(e, id)}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 select-none cursor-grab active:cursor-grabbing ${
+                    className={`relative px-4 py-2 text-sm font-medium border-b-2 select-none cursor-grab active:cursor-grabbing ${
                       activeTab === id
                         ? "text-selection-text border-selection-bg font-semibold"
                         : "text-muted border-transparent hover:text-text"
@@ -170,6 +178,14 @@ export default function App() {
                     onClick={() => onTabActivate(id)}
                   >
                     {TAB_LABELS[id]}
+                    {draggingTab && dropTarget === id && dropTarget !== draggingTab && (
+                      <span
+                        aria-hidden
+                        className={`absolute top-1 bottom-1 w-0.5 rounded bg-accent pointer-events-none ${
+                          tabOrder.indexOf(draggingTab) < tabOrder.indexOf(id) ? "-right-px" : "-left-px"
+                        }`}
+                      />
+                    )}
                   </button>
                 ))}
               </div>

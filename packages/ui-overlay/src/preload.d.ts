@@ -63,7 +63,7 @@ export interface OverlayBarState {
 
 export interface EFOverlayAPI {
   settings?: {
-    get: () => Promise<{ overlayOpacity?: number }>;
+    get: () => Promise<{ overlayOpacity?: number; tabOrder?: string[] }>;
   };
   contracts?: {
     search: (params: SearchContractsParams) => Promise<ContractBrowseSummary[]>;

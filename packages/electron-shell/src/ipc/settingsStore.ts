@@ -35,6 +35,8 @@ export interface AppSettings {
   miniMapOpacity?: number;
   /** Map: reading the game client's debug log (LogLite stand-in) was on when last used. */
   logLite?: boolean;
+  /** Main window tab order ("contracts" | "builder" | "scout" | "map"); the overlay bar follows it. */
+  tabOrder?: string[];
   /** Overlay toolbar was open when last used; it reopens on launch. */
   overlayToolbar?: boolean;
   /** Ids of local plugins switched off in Settings. */

@@ -236,6 +236,8 @@ export interface EFOverlayAPI {
       storageApiBase?: string;
       overlayOpacity?: number;
       miniMapOpacity?: number;
+      /** Main window tab order; the overlay bar follows it. */
+      tabOrder?: string[];
     }>;
     set: (settings: {
       gameLogDir?: string;
@@ -245,6 +247,8 @@ export interface EFOverlayAPI {
       storageApiBase?: string;
       overlayOpacity?: number;
       miniMapOpacity?: number;
+      /** Main window tab order; the overlay bar follows it. */
+      tabOrder?: string[];
     }) => Promise<void>;
   };
   app?: {
