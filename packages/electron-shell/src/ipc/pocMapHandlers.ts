@@ -245,6 +245,7 @@ function completeScoutedGate(): PocEdge | string | undefined {
   if (from === to) return "The destination is the current system";
   saveEdges([[from, to]], "deployable", itemId, true);
   setEdgeGateOwner(from, to, itemId, owner);
+  requestGatePlacement({ gateId: itemId, systemId: from, toSystemId: to });
   pushFeed("edge-added", `Scouted gate: ${systemLabel(from)} → ${systemLabel(to)}`);
   return loadEdges()[edgeKey({ a: Math.min(from, to), b: Math.max(from, to), source: "deployable", gateId: itemId })];
 }
@@ -268,6 +269,79 @@ async function scoutGateInfo(text: string): Promise<PocGateScoutResult> {
   if (found === "nothing") return { found };
   const done = completeScoutedGate();
   return typeof done === "string" ? { found, error: done } : { found, edge: done };
+}
+
+// --- Where a deployable gate stands in its system ("P2L4"), marked by hand ---
+// Neither LogLite (warps carry no destination) nor the chain (location is a hash) says where a gate is,
+// so the overlay asks after a jump through it; the answer is kept per gate item ID.
+
+export interface PocGateLocation {
+  gateId: number;
+  systemId: number;
+  /** "P2L4" (planet 2, Lagrange point 4), "P3" (at the planet), "Star". */
+  location: string;
+  at: string;
+}
+
+function gateLocationsPath(): string {
+  return path.join(pocDataDir(), "poc-gate-locations.json");
+}
+
+function loadGateLocations(): Record<string, PocGateLocation> {
+  try {
+    return JSON.parse(fs.readFileSync(gateLocationsPath(), "utf8")) as Record<string, PocGateLocation>;
+  } catch {
+    return {};
+  }
+}
+
+/** The gate the "gate location" mini-overlay asks about: one specific gate in one specific system. */
+interface GatePlacementRequest {
+  gateId: number;
+  systemId: number;
+  toSystemId: number | null;
+}
+
+export interface PocGatePlacement extends GatePlacementRequest {
+  systemName: string | null;
+  toSystemName: string | null;
+  /** On-chain type and owner, once looked up. */
+  typeId: number | null;
+  ownerName: string | null;
+  /** Already placed ("P2L4"), when reopened to change it. */
+  location: string | null;
+}
+
+let gatePlacement: GatePlacementRequest | null = null;
+let onGatePlacement: (() => void) | null = null;
+
+/** Opens the mini-overlay for a gate; unless `force` (✎), only when its place isn't known yet. */
+function requestGatePlacement(req: GatePlacementRequest, force = false): void {
+  if (!force && loadGateLocations()[req.gateId]) return;
+  gatePlacement = req;
+  onGatePlacement?.();
+}
+
+function gatePlacementView(): PocGatePlacement | null {
+  if (!gatePlacement) return null;
+  const { gateId, systemId, toSystemId } = gatePlacement;
+  const links = loadLinks();
+  const edge = Object.values(loadEdges()).find((e) => e.source === "deployable" && e.gateId === gateId);
+  return {
+    ...gatePlacement,
+    systemName: links[systemId]?.name ?? null,
+    toSystemName: toSystemId != null ? links[toSystemId]?.name ?? null : null,
+    typeId: edge?.gateTypeId ?? null,
+    ownerName: edge?.gateOwnerName ?? null,
+    location: loadGateLocations()[gateId]?.location ?? null,
+  };
+}
+
+function setGateLocation(gateId: number, systemId: number, location: string | null): void {
+  const all = loadGateLocations();
+  if (location?.trim()) all[gateId] = { gateId, systemId, location: location.trim(), at: new Date().toISOString() };
+  else delete all[gateId];
+  fs.writeFileSync(gateLocationsPath(), JSON.stringify(all, null, 2), "utf8");
 }
 
 // --- Dormant NPC stargates (need restoration), marked by hand ---
@@ -347,6 +421,15 @@ function currentSystemId(): number | null {
   if (logLiteSystemId != null && getLogLiteStatus().state === "connected") return logLiteSystemId;
   const current = getCurrentSystem();
   return current ? systemIdByName(current) : null;
+}
+
+/**
+ * Current system name from LogLite (the game session) when it is connected and the ID has a known name.
+ * The Local chat log can miss a system change; the session can't.
+ */
+export function logLiteSystemName(): string | null {
+  if (logLiteSystemId == null || getLogLiteStatus().state !== "connected") return null;
+  return loadLinks()[logLiteSystemId]?.name ?? null;
 }
 
 /**
@@ -455,6 +538,9 @@ function onLogLiteEvent(event: LogLiteEvent): void {
   pendingJump = null;
   if (!hop) return;
   recordHop(hop);
+  if (hop.via === "deployable-gate" && hop.gateId != null) {
+    requestGatePlacement({ gateId: hop.gateId, systemId: hop.fromSystemId, toSystemId: hop.toSystemId });
+  }
   if (hop.via === "stargate") clearDormantBetween(hop.fromSystemId, hop.toSystemId);
   pushFeed("hop", `${VIA_LABEL[hop.via]}: ${systemLabel(hop.fromSystemId)} → ${systemLabel(hop.toSystemId)}`);
   // Only gates make connections; a ship jump or respawn can cross any distance.
@@ -498,10 +584,20 @@ function setLogLite(on: boolean): void {
 
 let clipboardTimer: ReturnType<typeof setInterval> | null = null;
 let lastClipboard = "";
+let clipboardWatchers = 0;
 let lastIngested: PocSystemLink[] = [];
 let lastGateScout: PocGateScoutResult | null = null;
 
-export function registerPocMapHandlers(): void {
+export function registerPocMapHandlers(opts: { onGatePlacement?: () => void } = {}): void {
+  onGatePlacement = opts.onGatePlacement ?? null;
+  ipcMain.handle("pocMap:get-gate-placement", () => gatePlacementView());
+  ipcMain.handle("pocMap:place-gate", (_event, gateId: number, systemId: number, toSystemId: number | null) =>
+    requestGatePlacement({ gateId, systemId, toSystemId }, true),
+  );
+  ipcMain.handle("pocMap:dismiss-gate-placement", () => {
+    gatePlacement = null;
+  });
+
   onGateOwnerResolved((hop) => {
     if (hop.gateId != null && hop.gateOwner) setEdgeGateOwner(hop.fromSystemId, hop.toSystemId, hop.gateId, hop.gateOwner);
   });
@@ -519,10 +615,14 @@ export function registerPocMapHandlers(): void {
     return getTravel();
   });
 
+  // Several windows want the watcher (Map tab, Scout overlay): it runs while any of them asks for it.
   ipcMain.handle("pocMap:watch-clipboard", async (_event, on: boolean) => {
-    if (clipboardTimer) clearInterval(clipboardTimer);
-    clipboardTimer = null;
-    if (!on) return;
+    clipboardWatchers = Math.max(0, clipboardWatchers + (on ? 1 : -1));
+    if (clipboardWatchers === 0 && clipboardTimer) {
+      clearInterval(clipboardTimer);
+      clipboardTimer = null;
+    }
+    if (clipboardWatchers === 0 || clipboardTimer) return;
     // Clipboard reads are async since Electron 44; skip a tick while the previous read is pending.
     lastClipboard = await clipboard.readText();
     let reading = false;
@@ -551,13 +651,19 @@ export function registerPocMapHandlers(): void {
       areaNames: loadAreaNames(),
       edges: [...Object.values(loadEdges()), ...dormant.edges],
       dormantGates: dormant.gates,
+      gateLocations: loadGateLocations(),
       lastGateScout,
       currentSystemId: currentSystemId(),
     };
   });
 
-  ipcMain.handle("pocMap:add-dormant", (_event, fromSystemId: number | null, text: string, note?: string) => addDormant(fromSystemId, text, note));
+  ipcMain.handle("pocMap:add-dormant", async (_event, fromSystemId: number | null, text?: string, note?: string) =>
+    addDormant(fromSystemId, text ?? (await clipboard.readText()), note),
+  );
   ipcMain.handle("pocMap:remove-dormant", (_event, id: string) => saveDormant(loadDormant().filter((g) => g.id !== id)));
+  ipcMain.handle("pocMap:set-gate-location", (_event, gateId: number, systemId: number, location: string | null) =>
+    setGateLocation(gateId, systemId, location),
+  );
 
   ipcMain.handle("pocMap:add-adjacent", async (_event, anchorId: number | null, text?: string) =>
     addAdjacent(text ?? (await clipboard.readText()), anchorId),

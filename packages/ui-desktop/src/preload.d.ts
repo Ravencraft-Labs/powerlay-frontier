@@ -153,7 +153,7 @@ export interface GameData {
 }
 
 /** "map" (POC): the mini-map overlay window. */
-export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map" | "toolbar";
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map" | "toolbar" | "gateloc";
 
 export interface EFOverlayAPI {
   contracts?: {
@@ -307,6 +307,8 @@ export interface EFOverlayAPI {
       currentSystemId: number | null;
       lastGateScout: PocGateScoutResult | null;
       dormantGates: PocDormantGate[];
+      /** Where deployable gates stand ("P2L4"), by gate item ID. */
+      gateLocations: Record<string, PocGateLocation>;
     }>;
     ingestText: (text: string) => Promise<PocSystemLink[]>;
     ingestClipboard: () => Promise<PocSystemLink[]>;
@@ -317,7 +319,7 @@ export interface EFOverlayAPI {
     /** A gate / catapult from its in-game info (assembly id + destination link); clipboard when no text. */
     scoutGate: (text?: string) => Promise<PocGateScoutResult>;
     /** Mark a dormant NPC stargate: destination as a name, the depot title or a system link. */
-    addDormant: (fromSystemId: number | null, text: string, note?: string) => Promise<{ gate?: PocDormantGate; error?: string }>;
+    addDormant: (fromSystemId: number | null, text?: string, note?: string) => Promise<{ gate?: PocDormantGate; error?: string }>;
     removeDormant: (id: string) => Promise<void>;
   };
   /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
@@ -370,6 +372,14 @@ export interface PocEdge {
   gateOwnerName?: string;
   /** Known from the gate's in-game info (scouted), not travelled through yet. */
   scouted?: boolean;
+  at: string;
+}
+
+export interface PocGateLocation {
+  gateId: number;
+  systemId: number;
+  /** "P2L4", "P3" (at the planet), "Star". */
+  location: string;
   at: string;
 }
 

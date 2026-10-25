@@ -26,7 +26,7 @@ const btnCls =
   "px-2 py-0.5 text-[11px] rounded-md border border-border/60 text-muted hover:text-text hover:border-border cursor-pointer bg-transparent";
 
 export function TravelPanel({ data, onFocus }: { data: MapData; onFocus: (p: Pt) => void }) {
-  const { sessionHops, travel, setTravel, byId, nameOf, linkById, logLite } = data;
+  const { sessionHops, travel, setTravel, byId, nameOf, linkById, logLite, gateLocations } = data;
   const [myTribeId, setMyTribeId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -81,6 +81,7 @@ export function TravelPanel({ data, onFocus }: { data: MapData; onFocus: (p: Pt)
               <div className="pl-2">
                 {VIA_LABEL[h.via]}
                 {h.via === "deployable-gate" ? ` · ${ownerText(h.gateOwner, myTribeId)}` : ""}
+                {h.gateId != null && gateLocations[h.gateId] ? ` · at ${gateLocations[h.gateId].location}` : ""}
               </div>
             </button>
           );

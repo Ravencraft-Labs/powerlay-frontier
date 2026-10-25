@@ -27,12 +27,13 @@ let isQuitting = false;
 /**
  * "map" (POC) is the mini-map: same overlay mechanics, but rendered by the desktop renderer (?view=minimap).
  * "toolbar" is the overlay bar that switches the other overlays on and off; it is never locked.
+ * "gateloc" is the small "where is this gate?" prompt that pops up after jumping through / scouting a gate.
  */
-type OverlayFrame = "contracts" | "builder" | "scout" | "map" | "toolbar";
+type OverlayFrame = "contracts" | "builder" | "scout" | "map" | "toolbar" | "gateloc";
 /** Overlays the toolbar switches (builds are listed separately). */
 const TOOLBAR_FRAMES = ["scout", "contracts", "map"] as const;
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false, map: false, toolbar: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false, map: false, toolbar: false, gateloc: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -64,7 +65,7 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["contracts", "builder", "scout", "map", "toolbar"] as OverlayFrame[]) {
+    for (const f of ["contracts", "builder", "scout", "map", "toolbar", "gateloc"] as OverlayFrame[]) {
       let b = data[f];
       if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
@@ -531,7 +532,10 @@ app.whenReady().then(async () => {
   });
   registerTribeHandlers();
   registerScoutHandlers();
-  registerPocMapHandlers();
+  registerPocMapHandlers({
+    // A gate needs placing: pop the prompt up without taking focus from the game.
+    onGatePlacement: () => getOrCreateOverlayWindow("gateloc").showInactive(),
+  });
   registerPluginHandlers();
   loadPlugins();
   registerStorageHandlers(authServer);

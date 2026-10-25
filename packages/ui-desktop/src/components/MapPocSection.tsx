@@ -52,6 +52,7 @@ export function MapPocSection() {
     entriesBySystem,
     unmappedEntries,
     edgesBySystem,
+    gateLocations,
     visibleEdges,
     edgeFilter,
     setEdgeFilter,
@@ -104,6 +105,8 @@ export function MapPocSection() {
     if (e.gateTribeId != null) parts.push(e.gateTribeId === myTribeId ? "your tribe" : `tribe ${e.gateTribeId}`);
     else if (e.gateOwner === "player") parts.push("no player tribe");
     if (e.scouted) parts.push("scouted, not travelled");
+    const loc = e.gateId != null ? gateLocations[e.gateId] : undefined;
+    if (loc) parts.push(`at ${loc.location} in ${linkById.get(loc.systemId)?.name ?? loc.systemId}`);
     if (e.gateId != null) parts.push(`gate ${e.gateId}`);
     return parts.join(" · ");
   }

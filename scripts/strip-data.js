@@ -162,12 +162,54 @@ fs.writeFileSync(oreGroupIDsPath, JSON.stringify(oreGroupIDs, null, 0), "utf8");
 const oreStat = fs.statSync(oreGroupIDsPath);
 console.log("oreGroupIDs.json: " + oreGroupIDs.length + " ore groups (" + oreStat.size + " bytes)");
 
-// --- Scout sites (ecosystem.json + Crude Rift types) ---
+// --- Scout sites (ecosystem.json + rift types) ---
 // Ecosystem names carry the zone: "Broken World - Inner Belt - Ossuary Mill (Refinery - Ruins)".
 // Beacon type names are what players see in space, prefixed with the zone: "Inner Derelict Bay".
 const ecosystemInputPath = path.join(RAW_DIR, "ecosystem.json");
 const scoutSitesOutputPath = path.join(OUTPUT_DIR, "scout_sites.json");
-const CRUDE_RIFT_GROUP_ID = 4872;
+/**
+ * Group "Rift": "Crude - Old/Fine" (the type in a rift's info) and "Crude Matter - Old/Fine/High"
+ * (in space: "Rupture - Old/Fine/High [Rift]"). Players tell rifts apart by Age/Texture/Level, so those are the
+ * catalog names; the description says what the crude refines into (from its refining blueprint).
+ */
+const RIFT_GROUP_ID = 4593;
+const RIFT_NAME_RE = /^(?:Crude Matter|Rupture)\s*-\s*(Young|Old)\/(Fine|Rough)\/(Low|Mid|High)$/i;
+const blueprintsInputPath = path.join(RAW_DIR, "industry_blueprints.json");
+
+/** "Crude - Old/Fine" type ID → names of what one refining run outputs. */
+function crudeRefinesInto() {
+  const out = new Map();
+  if (!fs.existsSync(blueprintsInputPath)) return out;
+  const raw = JSON.parse(fs.readFileSync(blueprintsInputPath, "utf8"));
+  for (const bp of Object.values(raw.blueprints ?? raw)) {
+    const input = bp?.inputs?.length === 1 ? rawTypes[String(bp.inputs[0].typeID)] : null;
+    if (input?.groupID !== RIFT_GROUP_ID || !/^Crude\s*-/.test(input[nameKey] ?? "")) continue;
+    out.set(input[nameKey], (bp.outputs ?? []).map((o) => rawTypes[String(o.typeID)]?.[nameKey]).filter(Boolean));
+  }
+  return out;
+}
+
+function riftSites() {
+  const refines = crudeRefinesInto();
+  const sites = [];
+  for (const t of Object.values(rawTypes)) {
+    if (t?.groupID !== RIFT_GROUP_ID || !t.published) continue;
+    const name = String(t[nameKey] ?? "").trim();
+    const m = RIFT_NAME_RE.exec(name);
+    if (m) {
+      const crude = `Crude - ${m[1]}/${m[2]}`;
+      const into = refines.get(crude);
+      sites.push({
+        name: `${m[1]}/${m[2]}/${m[3]}`,
+        zone: "RIFT",
+        description: `Rupture · ${crude}${into?.length ? ` → ${into.join(", ")}` : ""}`,
+      });
+    } else if (name && !/^Crude\s*-/.test(name)) {
+      sites.push({ name, zone: "RIFT", description: "Rift" }); // e.g. Defiled Crude Matter
+    }
+  }
+  return sites;
+}
 
 function ecosystemZone(name) {
   if (/\bInner\b/i.test(name)) return "INNER";
@@ -180,12 +222,7 @@ function ecosystemZone(name) {
 if (fs.existsSync(ecosystemInputPath)) {
   const rawEcosystem = JSON.parse(fs.readFileSync(ecosystemInputPath, "utf8"));
   const sites = new Map();
-  for (const t of Object.values(rawTypes)) {
-    const name = t?.[nameKey];
-    if (t?.groupID === CRUDE_RIFT_GROUP_ID && typeof name === "string" && name.trim()) {
-      sites.set(name.trim(), { name: name.trim(), zone: "RIFT", description: "Crude Rift" });
-    }
-  }
+  for (const site of riftSites()) sites.set(site.name, site);
   for (const eco of Object.values(rawEcosystem)) {
     if (!eco?.spawnEnabled) continue;
     const beaconName = rawTypes[String(eco.entryPattern?.beaconTypeID)]?.[nameKey];

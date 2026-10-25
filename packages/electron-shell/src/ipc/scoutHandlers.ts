@@ -6,7 +6,7 @@ import { getScoutStore } from "./scoutStore.js";
 import { loadScoutSettings, updateScoutSettings } from "./scoutSettingsStore.js";
 import { logCreated, logCleared, logDeleted, getActivityLog } from "./scoutActivityStore.js";
 import { loadScoutStaticData } from "./scoutStaticData.js";
-import { systemIdByName } from "./pocMapHandlers.js";
+import { logLiteSystemName, systemIdByName } from "./pocMapHandlers.js";
 
 /** Derive the Chatlogs directory from the configured game log dir.
  *  e.g. ".../Frontier/Logs/Gamelogs" → ".../Frontier/Logs/Chatlogs"
@@ -29,7 +29,8 @@ function resolveChatLogDir(): string {
 function getActiveSystem(): string | null {
   const settings = loadScoutSettings();
   if (settings.systemOverride) return settings.systemOverride;
-  return getCurrentSystem();
+  // LogLite follows the game session; the Local chat log sometimes misses a system change.
+  return logLiteSystemName() ?? getCurrentSystem();
 }
 
 /**

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { buildZoneCatalog, findSystemReport, formatSystemReport, siteTooltip, withReportField } from "@powerlay/core";
+import { buildZoneCatalog, findSystemReport, siteTooltip, withReportField } from "@powerlay/core";
 import type { ScoutEntry, RiftZone, CreateScoutEntryInput, ScoutSiteDef, SystemState } from "@powerlay/core";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { useEfOverlay } from "../hooks/useEfOverlay";
-import type { PocEdgeResult, PocLogLiteStatus, PocSystemLink } from "../preload.d";
+import type { PocEdgeResult, PocGateLocation, PocGateScoutResult, PocLogLiteStatus, PocSystemLink } from "../preload.d";
+import type { TravelHop } from "@powerlay/core";
 
 const ZONE_COLORS: Record<RiftZone, string> = {
   RIFT:   "text-cyan-400   border-cyan-400/50",
@@ -15,19 +16,25 @@ const ZONE_COLORS: Record<RiftZone, string> = {
   UNKNOWN: "text-slate-400 border-slate-400/50",
 };
 
-const TYPE_COLORS: Partial<Record<string, string>> = {
-  system: "text-teal-400 border-teal-400/50",
+/** Zone block background: the marked-button colour, darker. */
+const ZONE_TINTS: Record<RiftZone, string> = {
+  RIFT: "bg-cyan-400/[0.07]",
+  INNER: "bg-blue-400/[0.07]",
+  TROJAN: "bg-violet-400/[0.07]",
+  FRINGE: "bg-orange-400/[0.07]",
+  OUTER: "bg-amber-400/[0.07]",
+  FERAL: "bg-red-400/[0.07]",
+  UNKNOWN: "bg-slate-400/[0.07]",
 };
 
-const TYPE_FALLBACK = "text-muted border-border/40";
+const ZONE_TINT_KEY = "powerlay-scout-zone-tint";
 
-function badgeColor(zone: RiftZone | undefined, type: string): string {
-  if (zone && ZONE_COLORS[zone]) return ZONE_COLORS[zone];
-  return TYPE_COLORS[type] ?? TYPE_FALLBACK;
-}
-
-function badgeLabel(zone: RiftZone | undefined, type: string): string {
-  return zone ?? type.toUpperCase();
+function loadZoneTint(): boolean {
+  try {
+    return localStorage.getItem(ZONE_TINT_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 function findActiveEntry(entries: ScoutEntry[], system: string, subtype: string): ScoutEntry | null {
@@ -51,6 +58,18 @@ export function ScoutOverlay() {
   const [pasteText, setPasteText] = useState("");
   // POC: mini-map overlay window
   const [miniMapOpen, setMiniMapOpen] = useState(false);
+  const [zoneTint, setZoneTint] = useState(loadZoneTint);
+
+  function toggleZoneTint() {
+    setZoneTint((on) => {
+      try {
+        localStorage.setItem(ZONE_TINT_KEY, on ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !on;
+    });
+  }
 
   const loadData = useCallback(async () => {
     const scout = api?.scout;
@@ -122,16 +141,6 @@ export function ScoutOverlay() {
     }
   }
 
-  async function markDepleted(id: string) {
-    try {
-      await api?.scout?.update?.(id, { status: "cleared", clearedBy: "overlay" });
-      const list = await api?.scout?.list?.();
-      if (list) setEntries(list);
-    } catch {
-      /* ignore */
-    }
-  }
-
   async function toggleSite(zone: RiftZone, subtype: string) {
     if (!activeSystem) return;
     const existing = findActiveEntry(entries, activeSystem, subtype);
@@ -198,11 +207,25 @@ export function ScoutOverlay() {
 
   const currentLink = activeSystem ? links.find((l) => l.name?.toLowerCase() === activeSystem.toLowerCase()) : undefined;
 
-  const currentSystemEntries = entries.filter((e) => e.system === activeSystem && e.status === "active");
   const currentReport = activeSystem ? findSystemReport(entries, activeSystem) : null;
 
   return (
-    <OverlayFrame title="Scout">
+    <OverlayFrame
+      title="Scout"
+      headerActions={
+        <button
+          type="button"
+          onClick={toggleZoneTint}
+          className={`w-7 h-7 flex items-center justify-center rounded transition-colors hover:bg-border ${zoneTint ? "text-accent" : "text-muted hover:text-text"}`}
+          title={zoneTint ? "Plain zone blocks" : "Tint zone blocks with their colour"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+          </svg>
+        </button>
+      }
+    >
       {/* All interactive content must have overlay-no-drag to receive clicks */}
       <div className="overlay-no-drag">
         {/* System row */}
@@ -301,14 +324,17 @@ export function ScoutOverlay() {
           {linkResult && <div className="text-[10px] text-muted break-words">{linkResult}</div>}
         </div>
 
+        {/* POC: gates / catapults / dormant NPC gates → map */}
+        <GatesBlock />
+
         {/* POC: LogLite → map */}
         <LogLiteFeed />
 
-        {/* Zone quick-picker */}
-        <div className="px-3 pb-2 flex flex-col gap-1">
+        {/* Zone quick-picker: zone heading, then its sites wrapping at their own width. Click marks, click again clears. */}
+        <div className={`px-3 pb-2 flex flex-col ${zoneTint ? "gap-0.5" : "gap-1.5"}`}>
           {catalog.map(({ zone, sites }) => (
-            <div key={zone} className="flex items-start gap-1.5">
-              <span className="w-14 shrink-0 text-[10px] font-semibold text-muted uppercase tracking-wide pt-1 text-right">{zone}</span>
+            <div key={zone} className={`flex flex-col gap-0.5 rounded ${zoneTint ? `${ZONE_TINTS[zone]} -mx-1.5 px-1.5 py-0.5` : ""}`}>
+              <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">{zone}</span>
               <div className="flex flex-wrap gap-1">
                 {sites.map((site) => {
                   const active = !!findActiveEntry(entries, activeSystem ?? "", site.name);
@@ -368,33 +394,6 @@ export function ScoutOverlay() {
             );
           })}
         </div>
-
-        {/* Active entries for current system */}
-        {currentSystemEntries.length > 0 && (
-          <div className="px-3 pb-2 border-t border-border/30 pt-2 flex flex-col gap-1 max-h-40 overflow-y-auto">
-            {currentSystemEntries
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-              .slice(0, 10)
-              .map((e) => (
-                <div key={e.id} className="flex items-center gap-1.5 text-[10px]">
-                  <span className={`shrink-0 font-bold border rounded px-1 ${badgeColor(e.zone as RiftZone | undefined, e.type)}`}>
-                    {badgeLabel(e.zone as RiftZone | undefined, e.type)}
-                  </span>
-                  <span className="text-text flex-1 truncate">
-                    {e.report ? formatSystemReport(e.report) : e.subtype ?? e.type}
-                  </span>
-                  {e.type !== "system" && <button
-                    type="button"
-                    onClick={() => void markDepleted(e.id)}
-                    className="shrink-0 text-muted hover:text-yellow-400 border border-border/30 hover:border-yellow-400/40 rounded px-1 cursor-pointer bg-transparent"
-                    title="Mark as depleted"
-                  >
-                    depleted
-                  </button>}
-                </div>
-              ))}
-          </div>
-        )}
       </div>
     </OverlayFrame>
   );
@@ -402,10 +401,120 @@ export function ScoutOverlay() {
 
 const FEED_COLORS: Partial<Record<string, string>> = {
   "edge-added": "text-cyan-300",
-  "name-bound": "text-green-400",
-  system: "text-text",
+  hop: "text-purple-300",
   disconnected: "text-amber-400",
 };
+
+/** Client connection, jumps (with gate kind) and new connections only. */
+const FEED_KINDS_SHOWN = new Set(["connected", "disconnected", "hop", "edge-added"]);
+
+const GATE_TYPE_NAMES: Record<number, string> = { 88086: "Mini Gate", 84955: "Heavy Gate", 95627: "Mini Catapult", 95677: "Heavy Catapult" };
+
+const smallBtn =
+  "flex-1 px-1.5 py-0.5 rounded border border-border/60 text-muted hover:text-text cursor-pointer bg-transparent disabled:opacity-30 disabled:cursor-default";
+
+/**
+ * POC: put gates on the map from in game, without the app window. Overlays can't be typed into (they don't take
+ * focus, so the game stays fullscreen), so everything comes through the clipboard:
+ * - gate / catapult: copy its assembly id and its destination link from the info window (watched automatically);
+ * - dormant NPC stargate: type the destination in game chat, copy it, press the button.
+ */
+function GatesBlock() {
+  const api = useEfOverlay();
+  const [scout, setScout] = useState<PocGateScoutResult | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [hops, setHops] = useState<TravelHop[]>([]);
+  const [locations, setLocations] = useState<Record<string, PocGateLocation>>({});
+  const [names, setNames] = useState<Map<number, string>>(new Map());
+  const [currentId, setCurrentId] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    void api?.pocMap?.getLinks?.().then((r) => {
+      if (!r) return;
+      setScout(r.lastGateScout ?? null);
+      setLocations(r.gateLocations ?? {});
+      setCurrentId(r.currentSystemId);
+      setNames(new Map(r.links.filter((l) => l.name).map((l) => [l.id, l.name!])));
+    });
+    void api?.pocMap?.getTravel?.().then((t) => setHops(t?.hops ?? []));
+  }, [api]);
+
+  useEffect(() => {
+    void api?.pocMap?.watchClipboard?.(true);
+    load();
+    const t = setInterval(load, 1500);
+    return () => {
+      clearInterval(t);
+      void api?.pocMap?.watchClipboard?.(false);
+    };
+  }, [api, load]);
+
+  if (!api?.pocMap?.scoutGate) return null;
+
+  // The gate to place: one just scouted from its info (we stand next to it), else the last one jumped through.
+  const scoutedEdge = scout?.edge?.gateId != null && currentId != null && (scout.edge.a === currentId || scout.edge.b === currentId) ? scout.edge : null;
+  const lastGateHop = [...hops].reverse().find((h) => h.via === "deployable-gate" && h.gateId != null);
+  const target = scoutedEdge
+    ? { gateId: scoutedEdge.gateId!, systemId: currentId!, toSystemId: scoutedEdge.a === currentId ? scoutedEdge.b : scoutedEdge.a }
+    : lastGateHop
+      ? { gateId: lastGateHop.gateId!, systemId: lastGateHop.fromSystemId, toSystemId: lastGateHop.toSystemId }
+      : null;
+
+  const scoutText = (r: PocGateScoutResult | null): string | null => {
+    if (!r || r.found === "nothing") return null;
+    if (r.error) return r.error;
+    if (r.edge) return `✓ ${r.edge.gateTypeId != null ? GATE_TYPE_NAMES[r.edge.gateTypeId] ?? "Gate" : "Gate"} added to the map${r.edge.gateOwnerName ? ` · ${r.edge.gateOwnerName}` : ""}`;
+    return r.found === "gate" ? "Gate recognised — copy its destination link" : "Destination noted — copy the gate's assembly id";
+  };
+  const status = message ?? scoutText(scout);
+
+  return (
+    <div className="px-3 pb-2 flex flex-col gap-1 text-[10px]">
+      <div className="flex gap-1">
+        <button
+          type="button"
+          className={smallBtn}
+          title="Gate or catapult info: copy its assembly id and its destination system link (either order). Copies are picked up automatically; this re-reads the clipboard."
+          onClick={async () => {
+            setMessage(null);
+            setScout((await api.pocMap!.scoutGate()) ?? null);
+          }}
+        >
+          Gate / catapult
+        </button>
+        <button
+          type="button"
+          className={smallBtn}
+          title="Dormant NPC stargate from this system: type its destination (e.g. P9L|121) in game chat or drag the system link there, copy it, press this"
+          onClick={async () => {
+            const res = await api.pocMap!.addDormant?.(null);
+            setMessage(res?.error ?? (res?.gate ? "✓ Dormant gate marked" : null));
+          }}
+        >
+          Dormant gate
+        </button>
+      </div>
+      {status && <div className={status.startsWith("✓") ? "text-green-400" : "text-muted"}>{status}</div>}
+      {target && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted">
+            Last gate, in {names.get(target.systemId) ?? target.systemId}:{" "}
+            <span className={locations[target.gateId] ? "text-accent" : "text-muted italic"}>{locations[target.gateId]?.location ?? "not placed"}</span>
+          </span>
+          <button
+            type="button"
+            className="text-muted hover:text-text bg-transparent border-0 cursor-pointer"
+            title="Open the gate location prompt for this gate"
+            onClick={() => void api.pocMap!.placeGate?.(target.gateId, target.systemId, target.toSystemId)}
+          >
+            ✎
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /** POC: toggle for reading the game client's LogLite stream, plus its latest events. */
 function LogLiteFeed() {
@@ -446,7 +555,7 @@ function LogLiteFeed() {
           {on ? "Stop LogLite" : "Read LogLite"}
         </button>
       </div>
-      {status.feed.slice(0, 5).map((f, i) => (
+      {status.feed.filter((f) => FEED_KINDS_SHOWN.has(f.kind)).slice(0, 5).map((f, i) => (
         <div key={`${f.at}-${i}`} className={`truncate ${FEED_COLORS[f.kind] ?? "text-muted"}`} title={f.text}>
           {f.text}
         </div>

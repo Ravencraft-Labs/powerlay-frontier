@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ScoutEntry } from "@powerlay/core";
 import { usePlugins } from "../../plugins/PluginsProvider";
 import type { MapEdgeLayer } from "../../plugins/types";
-import type { PocDormantGate, PocEdge, PocGateScoutResult, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
+import type { PocDormantGate, PocEdge, PocGateLocation, PocGateScoutResult, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
 
 /** Game coordinates are metres (~1e19); scale to a comfortable world unit. */
 const WORLD_SCALE = 1e-16;
@@ -154,6 +154,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
   const [lastIngested, setLastIngested] = useState<PocSystemLink[]>([]);
   const [lastGateScout, setLastGateScout] = useState<PocGateScoutResult | null>(null);
   const [dormantGates, setDormantGates] = useState<PocDormantGate[]>([]);
+  const [gateLocations, setGateLocations] = useState<Record<string, PocGateLocation>>({});
   const [logLite, setLogLite] = useState<PocLogLiteStatus | null>(null);
   const [areaNames, setAreaNames] = useState<AreaNames>({ regions: {}, constellations: {} });
   const [travel, setTravel] = useState<PocTravel | null>(null);
@@ -197,6 +198,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
         setLastIngested(linkRes.lastIngested);
         setLastGateScout(linkRes.lastGateScout);
         setDormantGates(linkRes.dormantGates ?? []);
+        setGateLocations(linkRes.gateLocations ?? {});
         setAreaNames(linkRes.areaNames);
         setEdges(linkRes.edges);
         setCurrentSystemId(linkRes.currentSystemId);
@@ -318,6 +320,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
     lastGateScout,
     setLastGateScout,
     dormantGates,
+    gateLocations,
     setDormantGates,
     logLite,
     setLogLite,

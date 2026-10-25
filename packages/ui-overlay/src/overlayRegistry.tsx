@@ -3,9 +3,10 @@ import { BuildTrackingOverlay } from "./BuildTrackingOverlay";
 import { ContractsOverlay } from "./overlays/ContractsOverlay";
 import { ScoutOverlay } from "./overlays/ScoutOverlay";
 import { ToolbarOverlay } from "./overlays/ToolbarOverlay";
+import { GateLocationOverlay } from "./overlays/GateLocationOverlay";
 
 /** Supported overlay frame IDs. Add new frame IDs here to extend (Open/Closed). */
-export type OverlayFrameId = "contracts" | "builder" | "scout" | "toolbar";
+export type OverlayFrameId = "contracts" | "builder" | "scout" | "toolbar" | "gateloc";
 
 /** Registry of frame IDs to overlay components. Add new overlays here without modifying App. */
 export const OVERLAY_REGISTRY: Record<OverlayFrameId, ComponentType> = {
@@ -13,6 +14,7 @@ export const OVERLAY_REGISTRY: Record<OverlayFrameId, ComponentType> = {
   builder: BuildTrackingOverlay,
   scout: ScoutOverlay,
   toolbar: ToolbarOverlay,
+  gateloc: GateLocationOverlay,
 };
 
 /** Default frame when URL param is missing or invalid. */
@@ -24,7 +26,7 @@ export function getCurrentFrame(): OverlayFrameId {
   const params = new URLSearchParams(window.location.search);
   const f = params.get("frame");
   if (f === "todo") return "contracts";
-  return (f === "builder" || f === "contracts" || f === "scout" || f === "toolbar" ? f : DEFAULT_FRAME) as OverlayFrameId;
+  return (f === "builder" || f === "contracts" || f === "scout" || f === "toolbar" || f === "gateloc" ? f : DEFAULT_FRAME) as OverlayFrameId;
 }
 
 /** Reads buildId from URL query (?buildId=...). Used for builder overlay. */
@@ -42,5 +44,6 @@ export function OverlayRouter() {
   if (frame === "contracts") return <ContractsOverlay />;
   if (frame === "scout") return <ScoutOverlay />;
   if (frame === "toolbar") return <ToolbarOverlay />;
+  if (frame === "gateloc") return <GateLocationOverlay />;
   return null;
 }
