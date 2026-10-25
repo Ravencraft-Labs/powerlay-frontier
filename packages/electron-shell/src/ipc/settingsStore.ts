@@ -1,9 +1,9 @@
 import { app } from "electron";
 import fs from "fs";
 import path from "path";
+import { currentWorldPackage, FRONTIER_WORLDS } from "@powerlay/core";
 
-const DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS =
-  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS = FRONTIER_WORLDS.stillness.worldPackage;
 const DEFAULT_CONTRACTS_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
 const DEFAULT_STORAGE_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
 
@@ -62,7 +62,10 @@ export function loadSettings(): AppSettings {
     const data = JSON.parse(raw) as Record<string, unknown>;
     delete data.efGraphqlUrl;
     delete data.efWorldApiBaseUrl;
-    return { ...defaults, ...(data as Partial<AppSettings>) };
+    const merged = { ...defaults, ...(data as Partial<AppSettings>) };
+    // A saved world package from an earlier cycle means "that server": use its current package.
+    merged.worldContractsPackageId = currentWorldPackage(merged.worldContractsPackageId);
+    return merged;
   } catch {
     return { ...defaults };
   }

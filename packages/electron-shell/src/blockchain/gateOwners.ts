@@ -7,10 +7,11 @@
 import { bcs } from "@mysten/sui/bcs";
 import { deriveObjectID } from "@mysten/sui/utils";
 import type { GateOwner } from "@powerlay/core";
-import { FRONTIER_WORLD_PACKAGE_STILLNESS, getEffectiveEfGraphqlUrl, getPlayerTribeFetchTimeoutMs } from "./playerTribeFromChain.js";
+import { DEFAULT_FRONTIER_SERVER, worldPackagesOf } from "@powerlay/core";
+import { getEffectiveEfGraphqlUrl, getPlayerTribeFetchTimeoutMs } from "./playerTribeFromChain.js";
 
-/** Cycle 7 world package (catapults, current gates), then the Cycle 6 one. */
-const WORLD_PACKAGES = ["0x7be18d6294e533bedd9a5d70a96ce8d9d4b87a7c74188ba65d3fe966bbed9d92", FRONTIER_WORLD_PACKAGE_STILLNESS];
+/** Current world package (catapults, this cycle's gates), then earlier ones. */
+const WORLD_PACKAGES = worldPackagesOf(DEFAULT_FRONTIER_SERVER);
 const TENANT = "stillness";
 /** Tribe IDs below this are NPC corporations (characters without a player tribe). */
 const FIRST_PLAYER_TRIBE_ID = 98_000_000;

@@ -22,12 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Map (POC): connections are coloured and filterable by kind (NPC stargates, player gates — optionally only your tribe's — catapults / server gates); several connections between two systems are drawn side by side and listed per neighbour.
 - Map (POC): gate owners are looked up in the Cycle 7 world package too, so catapults (Mini / Heavy Catapult) show their owner and get their own colour and filter.
 - Map (POC): scout a gate or catapult without jumping — copy its assembly id and destination link from its info window; it is added as a dashed connection from the current system.
+- Map (POC): mark dormant NPC stargates (need restoration) by destination name, depot title or link; drawn dotted, cleared when you jump through.
 - Dev: `pnpm dev` mirrors the game client's LogLite stream to `data/loglite/live/client*.tsv` (rotated, 1 GB max) while "Read LogLite" is on.
 - Overlay bar: an in-game strip to show, hide and lock the Scout, Contracts, Map and build overlays without switching to the app; the eye hides all open overlays and brings them back. Open it from the header ("Overlay bar") or the tray menu; it reopens on the next launch.
 
 ### Changed
 
 - Electron 28 → 44 (Node 18 → 24): plugins can use built-in `node:sqlite`.
+- Blockchain: Stillness now uses the Cycle 7 world package. All chain addresses live in one place (`packages/core/src/chain/worlds.ts`); a saved Cycle 6 world package setting is moved to the current one.
+- Map (POC): the LogLite feed shows only client connection, jumps and new connections, and the side panels scroll instead of stretching the window.
 
 ### Fixed
 

@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import type { PocEdgeResult, PocLogLiteStatus } from "../preload";
 import { OverlayWithLock } from "./OverlayWithLock";
 import { FOCUS_ZOOM, MapCanvas, type MapCanvasHandle } from "./map/MapCanvas";
+import { DormantGatesPanel } from "./map/DormantGatesPanel";
 import { TravelPanel } from "./map/TravelPanel";
 import {
   EDGE_COLORS,
@@ -235,12 +236,15 @@ export function MapPocSection() {
           </div>
         </MapCanvas>
 
-        <aside className="w-64 shrink-0 flex flex-col gap-3 text-sm overflow-y-auto">
+        {/* Positioned so the side panels scroll inside the map's height instead of stretching the page. */}
+        <div className="relative w-64 shrink-0">
+        <aside className="absolute inset-0 flex flex-col gap-3 text-sm overflow-y-auto [&>*]:shrink-0">
           {logLite && <LogLitePanel status={logLite} onToggle={async (on) => {
             await window.efOverlay?.pocMap?.setLogLite?.(on);
             setLogLite((await window.efOverlay?.pocMap?.getLogLiteStatus?.()) ?? null);
           }} />}
           <TravelPanel data={data} onFocus={(p) => focusOn(p, FOCUS_ZOOM)} />
+          <DormantGatesPanel data={data} systemId={selectedId ?? currentPt?.sys.id ?? currentSystemId} onFocus={(p) => focusOn(p, FOCUS_ZOOM)} />
           <div className="p-3 rounded-md border border-border/50 bg-bg/40 text-xs text-muted flex flex-col gap-1.5">
             <div className="text-text font-medium">Chat links → map</div>
             <div>Watching the clipboard. Copy a chat message with a system link — it gets pinned to the map.</div>
@@ -428,6 +432,7 @@ export function MapPocSection() {
             )}
           </div>
         </aside>
+        </div>
       </div>
     </section>
   );
@@ -448,8 +453,12 @@ const FEED_COLORS: Partial<Record<string, string>> = {
   disconnected: "text-amber-400",
 };
 
+/** Client connection, jumps (with gate kind) and new connections; warps, name binds etc. are noise here. */
+const FEED_KINDS_SHOWN = new Set(["connected", "disconnected", "hop", "edge-added"]);
+
 function LogLitePanel({ status, onToggle }: { status: PocLogLiteStatus; onToggle: (on: boolean) => void }) {
   const on = status.state !== "off";
+  const feed = status.feed.filter((f) => FEED_KINDS_SHOWN.has(f.kind));
   return (
     <div className="p-3 rounded-md border border-border/50 bg-bg/40 text-xs text-muted flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -461,12 +470,15 @@ function LogLitePanel({ status, onToggle }: { status: PocLogLiteStatus; onToggle
       <div className={status.state === "connected" ? "text-green-400" : status.state === "error" ? "text-red-400" : ""}>
         {status.error ?? LOGLITE_STATE_LABEL[status.state]}
       </div>
-      {on && <div>Reads the game client's debug log instead of LogLite (port 3273): jumps add connections and the travel log, names bind to IDs. Stays on after a restart.</div>}
-      {status.feed.slice(0, 10).map((f, i) => (
-        <div key={`${f.at}-${i}`} className={FEED_COLORS[f.kind] ?? ""}>
-          <span className="text-muted">{new Date(f.at).toLocaleTimeString()}</span> {f.text}
+      {feed.length > 0 && (
+        <div className="max-h-32 overflow-y-auto flex flex-col gap-0.5">
+          {feed.map((f, i) => (
+            <div key={`${f.at}-${i}`} className={FEED_COLORS[f.kind] ?? ""}>
+              <span className="text-muted">{new Date(f.at).toLocaleTimeString()}</span> {f.text}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }

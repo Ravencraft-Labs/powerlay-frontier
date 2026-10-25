@@ -181,7 +181,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       group.forEach((e, i) => {
         const off = (i - (group.length - 1) / 2) * 3.5;
         ctx.strokeStyle = edgeColor(e);
-        ctx.setLineDash(e.scouted ? [4, 3] : []); // known from the gate's info, not travelled yet
+        // dashed: known from the gate's info but not travelled yet; dotted: dormant NPC gate
+        ctx.setLineDash(e.source === "dormant" ? [2, 4] : e.scouted ? [4, 3] : []);
         ctx.beginPath();
         ctx.moveTo(x1 + nx * off, y1 + ny * off);
         ctx.lineTo(x2 + nx * off, y2 + ny * off);

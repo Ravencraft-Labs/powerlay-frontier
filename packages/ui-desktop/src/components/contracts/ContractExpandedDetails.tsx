@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { ContractBrowseSummary, ContractResourceLine } from "@powerlay/core";
-import { lineProgressPercent, tokensForDeliveredAmount } from "@powerlay/core";
+import { FRONTIER_WORLDS, lineProgressPercent, tokensForDeliveredAmount } from "@powerlay/core";
 import { formatWithThousandsSeparator } from "../../utils/format";
 import { statusLabel, visibilityLabel } from "../../utils/contractsUi";
 import { contractsErrorForUi } from "../../utils/contractsIpcError";
@@ -18,7 +18,7 @@ function formatDeliverySignError(raw: string): string {
 
 const CONFIRMATION_POLL_MS = 2_000;
 const CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1_000;
-const DEFAULT_WORLD_PACKAGE_ID = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const DEFAULT_WORLD_PACKAGE_ID = FRONTIER_WORLDS.stillness.worldPackage;
 
 type LineDepositStatus = "ready" | "waiting" | "confirmed" | "failed" | "unknown";
 

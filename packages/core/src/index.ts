@@ -5,3 +5,4 @@ export * from "./log/index.js";
 export * from "./contracts/index.js";
 export * from "./scout/index.js";
 export * from "./loglite/index.js";
+export * from "./chain/worlds.js";

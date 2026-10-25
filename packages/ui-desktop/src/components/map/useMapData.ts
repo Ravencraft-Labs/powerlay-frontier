@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ScoutEntry } from "@powerlay/core";
 import { usePlugins } from "../../plugins/PluginsProvider";
 import type { MapEdgeLayer } from "../../plugins/types";
-import type { PocEdge, PocGateScoutResult, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
+import type { PocDormantGate, PocEdge, PocGateScoutResult, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
 
 /** Game coordinates are metres (~1e19); scale to a comfortable world unit. */
 const WORLD_SCALE = 1e-16;
@@ -24,6 +24,8 @@ export const EDGE_COLORS = {
   npc: "rgba(103, 232, 249, 0.85)",
   gate: "rgba(74, 222, 128, 0.9)",
   catapult: "rgba(251, 146, 60, 0.9)",
+  /** NPC stargate marked dormant (needs restoration) — dimmed, dashed. */
+  dormant: "rgba(103, 232, 249, 0.45)",
   /** Deployable gate not found on chain. */
   offchain: "rgba(248, 113, 113, 0.8)",
   /** Deployable gate whose owner isn't looked up yet. */
@@ -42,6 +44,7 @@ export const GATE_TYPE_NAMES: Record<number, string> = {
 const CATAPULT_TYPE_IDS = new Set([95627, 95677]);
 
 export function edgeKind(e: PocEdge): EdgeKind {
+  if (e.source === "dormant") return "dormant";
   if (e.source !== "deployable") return "npc";
   if (e.gateOwner === "player") return e.gateTypeId != null && CATAPULT_TYPE_IDS.has(e.gateTypeId) ? "catapult" : "gate";
   return e.gateOwner ?? "deployable";
@@ -54,6 +57,7 @@ export function edgeColor(e: PocEdge): string {
 /** For a single connection. */
 export const EDGE_KIND_SHORT: Record<EdgeKind, string> = {
   npc: "NPC stargate",
+  dormant: "dormant NPC stargate",
   gate: "player gate",
   catapult: "catapult",
   offchain: "gate not on chain",
@@ -62,6 +66,7 @@ export const EDGE_KIND_SHORT: Record<EdgeKind, string> = {
 
 export const EDGE_KIND_LABELS: Record<EdgeKind, string> = {
   npc: "NPC stargates",
+  dormant: "Dormant NPC gates",
   gate: "Player gates",
   catapult: "Catapults",
   offchain: "Not on chain",
@@ -76,7 +81,7 @@ export interface EdgeFilter {
 }
 
 const EDGE_FILTER_KEY = "powerlay-map-edge-filter";
-const DEFAULT_EDGE_FILTER: EdgeFilter = { kinds: { npc: true, gate: true, catapult: true, offchain: true, deployable: true }, myTribeOnly: false };
+const DEFAULT_EDGE_FILTER: EdgeFilter = { kinds: { npc: true, dormant: true, gate: true, catapult: true, offchain: true, deployable: true }, myTribeOnly: false };
 
 function loadEdgeFilter(): EdgeFilter {
   try {
@@ -148,6 +153,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
   const [currentSystemId, setCurrentSystemId] = useState<number | null>(null);
   const [lastIngested, setLastIngested] = useState<PocSystemLink[]>([]);
   const [lastGateScout, setLastGateScout] = useState<PocGateScoutResult | null>(null);
+  const [dormantGates, setDormantGates] = useState<PocDormantGate[]>([]);
   const [logLite, setLogLite] = useState<PocLogLiteStatus | null>(null);
   const [areaNames, setAreaNames] = useState<AreaNames>({ regions: {}, constellations: {} });
   const [travel, setTravel] = useState<PocTravel | null>(null);
@@ -190,6 +196,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
         setLinks(linkRes.links);
         setLastIngested(linkRes.lastIngested);
         setLastGateScout(linkRes.lastGateScout);
+        setDormantGates(linkRes.dormantGates ?? []);
         setAreaNames(linkRes.areaNames);
         setEdges(linkRes.edges);
         setCurrentSystemId(linkRes.currentSystemId);
@@ -310,6 +317,8 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
     setLastIngested,
     lastGateScout,
     setLastGateScout,
+    dormantGates,
+    setDormantGates,
     logLite,
     setLogLite,
     areaNames,

@@ -302,6 +302,7 @@ export interface EFOverlayAPI {
       edges: PocEdge[];
       currentSystemId: number | null;
       lastGateScout: PocGateScoutResult | null;
+      dormantGates: PocDormantGate[];
     }>;
     ingestText: (text: string) => Promise<PocSystemLink[]>;
     ingestClipboard: () => Promise<PocSystemLink[]>;
@@ -311,6 +312,9 @@ export interface EFOverlayAPI {
     clearTravel: () => Promise<PocTravel>;
     /** A gate / catapult from its in-game info (assembly id + destination link); clipboard when no text. */
     scoutGate: (text?: string) => Promise<PocGateScoutResult>;
+    /** Mark a dormant NPC stargate: destination as a name, the depot title or a system link. */
+    addDormant: (fromSystemId: number | null, text: string, note?: string) => Promise<{ gate?: PocDormantGate; error?: string }>;
+    removeDormant: (id: string) => Promise<void>;
   };
   /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
   plugins?: {
@@ -350,7 +354,8 @@ export interface PocMapBase {
 export interface PocEdge {
   a: number;
   b: number;
-  source: "adjacent" | "route" | "jump" | "deployable";
+  /** "dormant": NPC stargate marked by hand as needing restoration. */
+  source: "adjacent" | "route" | "jump" | "deployable" | "dormant";
   gateId?: number;
   /** Deployable edges: "player" = found on chain (gate or catapult), "offchain" = not on chain; unset until looked up. */
   gateOwner?: "player" | "offchain";
@@ -361,6 +366,16 @@ export interface PocEdge {
   gateOwnerName?: string;
   /** Known from the gate's in-game info (scouted), not travelled through yet. */
   scouted?: boolean;
+  at: string;
+}
+
+/** NPC stargate that needs restoration (Stargate Depot), marked by hand. */
+export interface PocDormantGate {
+  id: string;
+  fromSystemId: number;
+  toName: string;
+  toSystemId: number | null;
+  note?: string;
   at: string;
 }
 

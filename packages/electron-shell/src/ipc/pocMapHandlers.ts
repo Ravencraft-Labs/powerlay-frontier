@@ -124,8 +124,11 @@ function systemIdsInOrder(text: string): number[] {
 export interface PocEdge {
   a: number;
   b: number;
-  /** "jump": through an NPC stargate; "deployable": through an anchored gate or catapult. */
-  source: "adjacent" | "route" | "jump" | "deployable";
+  /**
+   * "jump": through an NPC stargate; "deployable": through an anchored gate or catapult;
+   * "dormant": an NPC stargate marked by hand as not working yet (see PocDormantGate, never stored as an edge).
+   */
+  source: "adjacent" | "route" | "jump" | "deployable" | "dormant";
   /** Gate used, when the edge came from a jump. */
   gateId?: number;
   /** Deployable edges: "player" = found on chain (gate or catapult), "offchain" = not on chain; unset until looked up. */
@@ -267,6 +270,78 @@ async function scoutGateInfo(text: string): Promise<PocGateScoutResult> {
   return typeof done === "string" ? { found, error: done } : { found, edge: done };
 }
 
+// --- Dormant NPC stargates (need restoration), marked by hand ---
+// The depot window has nothing copyable but the destination name ("STARGATE (R-TYPE) TO P9L|121"),
+// so the destination is kept as text and bound to an ID once the name is known (chat link, LogLite).
+
+export interface PocDormantGate {
+  id: string;
+  fromSystemId: number;
+  /** Destination as entered (name). */
+  toName: string;
+  /** Destination ID: from a pasted link, or resolved from the name. */
+  toSystemId: number | null;
+  note?: string;
+  at: string;
+}
+
+function dormantPath(): string {
+  return path.join(pocDataDir(), "poc-dormant-gates.json");
+}
+
+function loadDormant(): PocDormantGate[] {
+  try {
+    return JSON.parse(fs.readFileSync(dormantPath(), "utf8")) as PocDormantGate[];
+  } catch {
+    return [];
+  }
+}
+
+function saveDormant(list: PocDormantGate[]): void {
+  fs.writeFileSync(dormantPath(), JSON.stringify(list, null, 2), "utf8");
+}
+
+/** Accepts a system link, the depot title ("Stargate (R-Type) to P9L|121") or a bare name. */
+function addDormant(fromSystemId: number | null, text: string, note?: string): { gate?: PocDormantGate; error?: string } {
+  const from = fromSystemId ?? currentSystemId();
+  if (from == null) return { error: "Current system ID unknown — link it from chat first" };
+  ingestClipboard(text);
+  const linked = systemIdsInOrder(text)[0] ?? null;
+  const linkName = [...text.matchAll(LOCATION_LINK_RE)].find((m) => m[1] === "5")?.[3].trim();
+  const typed = text.replace(/<[^>]*>/g, " ").trim().replace(/^.*\bto\s+/i, "").trim();
+  const toName = (linkName || typed).replace(KIND_PREFIX_RE, "");
+  if (!toName && linked == null) return { error: "Enter the destination system" };
+  const gate: PocDormantGate = {
+    id: `${from}-${Date.now()}`,
+    fromSystemId: from,
+    toName: toName || String(linked),
+    toSystemId: linked ?? systemIdByName(toName),
+    ...(note?.trim() && { note: note.trim() }),
+    at: new Date().toISOString(),
+  };
+  saveDormant([...loadDormant(), gate]);
+  return { gate };
+}
+
+/** Dormant gates with destinations bound by now, plus their map edges. */
+function dormantWithIds(): { gates: PocDormantGate[]; edges: PocEdge[] } {
+  const gates = loadDormant().map((g) => ({ ...g, toSystemId: g.toSystemId ?? systemIdByName(g.toName) }));
+  const edges = gates
+    .filter((g) => g.toSystemId != null && g.toSystemId !== g.fromSystemId)
+    .map((g): PocEdge => ({ a: Math.min(g.fromSystemId, g.toSystemId!), b: Math.max(g.fromSystemId, g.toSystemId!), source: "dormant", at: g.at }));
+  return { gates, edges };
+}
+
+/** A stargate jump between two systems means that gate works now. */
+function clearDormantBetween(x: number, y: number): void {
+  const list = loadDormant();
+  const keep = list.filter((g) => {
+    const to = g.toSystemId ?? systemIdByName(g.toName);
+    return !((g.fromSystemId === x && to === y) || (g.fromSystemId === y && to === x));
+  });
+  if (keep.length !== list.length) saveDormant(keep);
+}
+
 /** ID of the current system: straight from LogLite while connected, else via the Local log name. */
 function currentSystemId(): number | null {
   if (logLiteSystemId != null && getLogLiteStatus().state === "connected") return logLiteSystemId;
@@ -368,24 +443,19 @@ function onLogLiteEvent(event: LogLiteEvent): void {
   if (event.kind === "jump") {
     const fromSystemId = event.fromSystemId ?? logLiteSystemId;
     pendingJump = { gate: event.gate, gateId: event.gateId, fromSystemId, receivedAt: now };
-    const via = event.gate === "stargate" ? "stargate" : "deployable gate";
-    pushFeed("jump", `Jumping${fromSystemId != null ? ` from ${systemLabel(fromSystemId)}` : ""} via ${via} ${event.gateId}`);
     return;
   }
-  if (event.kind === "warp") {
-    pushFeed("warp", event.state === "start" ? "Warp started" : "Warp ended");
-    return;
-  }
+  if (event.kind === "warp") return; // not shown in the feed
 
   logLiteSystemId = event.systemId;
   lastSession = { systemId: event.systemId, receivedAt: now };
   tryBindName();
-  pushFeed("system", `Current system: ${systemLabel(event.systemId)}`);
 
   const hop = classifyHop(event, pendingJump, now, new Date(now).toISOString());
   pendingJump = null;
   if (!hop) return;
   recordHop(hop);
+  if (hop.via === "stargate") clearDormantBetween(hop.fromSystemId, hop.toSystemId);
   pushFeed("hop", `${VIA_LABEL[hop.via]}: ${systemLabel(hop.fromSystemId)} → ${systemLabel(hop.toSystemId)}`);
   // Only gates make connections; a ship jump or respawn can cross any distance.
   if (hop.via === "stargate" || hop.via === "deployable-gate") {
@@ -473,14 +543,21 @@ export function registerPocMapHandlers(): void {
     }, 700);
   });
 
-  ipcMain.handle("pocMap:get-links", () => ({
-    links: Object.values(loadLinks()),
-    lastIngested,
-    areaNames: loadAreaNames(),
-    edges: Object.values(loadEdges()),
-    lastGateScout,
-    currentSystemId: currentSystemId(),
-  }));
+  ipcMain.handle("pocMap:get-links", () => {
+    const dormant = dormantWithIds();
+    return {
+      links: Object.values(loadLinks()),
+      lastIngested,
+      areaNames: loadAreaNames(),
+      edges: [...Object.values(loadEdges()), ...dormant.edges],
+      dormantGates: dormant.gates,
+      lastGateScout,
+      currentSystemId: currentSystemId(),
+    };
+  });
+
+  ipcMain.handle("pocMap:add-dormant", (_event, fromSystemId: number | null, text: string, note?: string) => addDormant(fromSystemId, text, note));
+  ipcMain.handle("pocMap:remove-dormant", (_event, id: string) => saveDormant(loadDormant().filter((g) => g.id !== id)));
 
   ipcMain.handle("pocMap:add-adjacent", async (_event, anchorId: number | null, text?: string) =>
     addAdjacent(text ?? (await clipboard.readText()), anchorId),

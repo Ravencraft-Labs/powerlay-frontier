@@ -63,7 +63,7 @@ export function TravelPanel({ data, onFocus }: { data: MapData; onFocus: (p: Pt)
         {sessionHops.length} jump{sessionHops.length === 1 ? "" : "s"} · {systems} system{systems === 1 ? "" : "s"}
         {travel?.sessionStartedAt ? ` · since ${new Date(travel.sessionStartedAt).toLocaleTimeString()}` : ""}
       </div>
-      <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
         {recent.map((h, i) => {
           const to = byId.get(h.toSystemId);
           return (

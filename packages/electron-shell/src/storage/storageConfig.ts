@@ -1,7 +1,4 @@
-import {
-  FRONTIER_WORLD_PACKAGE_STILLNESS,
-  FRONTIER_WORLD_PACKAGE_UTOPIA,
-} from "../blockchain/playerTribeFromChain.js";
+import { DEFAULT_FRONTIER_SERVER, FRONTIER_WORLDS, worldOfPackage } from "@powerlay/core";
 import { loadSettings } from "../ipc/settingsStore.js";
 
 /**
@@ -14,19 +11,11 @@ import { loadSettings } from "../ipc/settingsStore.js";
  * Stillness publish tx: DeWg8TVmHLVM725bCxwa5VGmxFfi3SdvchjvBweqYF1
  * Stillness upgrade cap: 0xb5c0b6f419cde569823a0fa1c5dbc1c6ec4d60cb03d2d1c3752af812c7df6e36
  */
-export const POWERLAY_STORAGE_PACKAGE_ID_UTOPIA =
-  "0x95a12684424d9b10d6ad602be7112159aa1b4e165bd3853653f025049f2a4c76";
+export const POWERLAY_STORAGE_PACKAGE_ID_UTOPIA = FRONTIER_WORLDS.utopia.powerlayStoragePackage;
 
-export const POWERLAY_STORAGE_PACKAGE_ID_STILLNESS =
-  "0xb5b0006235c1f27542c6efc1d60778e719f71e254ea3000fca131f8f92f19522";
+export const POWERLAY_STORAGE_PACKAGE_ID_STILLNESS = FRONTIER_WORLDS.stillness.powerlayStoragePackage;
 
 export function getPowerlayStoragePackageId(): string {
-  const worldPkg = loadSettings().worldContractsPackageId?.trim().toLowerCase() ?? "";
-  if (worldPkg === FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase()) {
-    return POWERLAY_STORAGE_PACKAGE_ID_STILLNESS;
-  }
-  if (worldPkg === FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase()) {
-    return POWERLAY_STORAGE_PACKAGE_ID_UTOPIA;
-  }
-  return POWERLAY_STORAGE_PACKAGE_ID_STILLNESS;
+  const server = worldOfPackage(loadSettings().worldContractsPackageId)?.world.server ?? DEFAULT_FRONTIER_SERVER;
+  return FRONTIER_WORLDS[server].powerlayStoragePackage;
 }

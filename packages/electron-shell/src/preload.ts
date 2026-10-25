@@ -155,6 +155,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
     addRoute: (text?: string) => ipcRenderer.invoke("pocMap:add-route", text),
     getTravel: () => ipcRenderer.invoke("pocMap:get-travel"),
     scoutGate: (text?: string) => ipcRenderer.invoke("pocMap:scout-gate", text),
+    addDormant: (fromSystemId: number | null, text: string, note?: string) => ipcRenderer.invoke("pocMap:add-dormant", fromSystemId, text, note),
+    removeDormant: (id: string) => ipcRenderer.invoke("pocMap:remove-dormant", id),
     clearTravel: () => ipcRenderer.invoke("pocMap:clear-travel"),
   },
   plugins: {

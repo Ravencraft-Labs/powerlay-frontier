@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { FRONTIER_WORLDS } from "@powerlay/core";
 import { usePluginRegistry } from "../plugins/PluginsProvider";
 
-const WORLD_PACKAGE_STILLNESS = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
-const WORLD_PACKAGE_UTOPIA = "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
+const WORLD_PACKAGE_STILLNESS = FRONTIER_WORLDS.stillness.worldPackage;
+const WORLD_PACKAGE_UTOPIA = FRONTIER_WORLDS.utopia.worldPackage;
 const CONTRACTS_API_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
 const CONTRACTS_API_UTOPIA = "https://utopia-back.ravencraft.dev/api/v1";
 
