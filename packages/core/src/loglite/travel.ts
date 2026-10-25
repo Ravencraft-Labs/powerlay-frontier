@@ -5,7 +5,7 @@ import type { LogLiteJumpEvent, LogLiteSessionEvent } from "./types.js";
  * - "stargate": fixed NPC stargate
  * - "deployable-gate": anchored gate (player-built or server-placed); its owner is looked up separately
  * - "ship-jump": no gate line before the change — the ship's own jump
- * - "respawn": the ship changed with the system (death → new ship at the clone)
+ * - "respawn": a ship came with the system change (death → new ship at the clone)
  */
 export type TravelVia = "stargate" | "deployable-gate" | "ship-jump" | "respawn";
 
@@ -49,7 +49,8 @@ export function classifyHop(session: LogLiteSessionEvent, pending: PendingJump |
   const from = session.fromSystemId;
   if (from == null || from === session.systemId) return null;
   const base = { at, fromSystemId: from, toSystemId: session.systemId };
-  if (session.fromShipId != null && session.shipId != null && session.fromShipId !== session.shipId) {
+  // Jumps don't touch the ship; a respawn hands out a new one (the old side is None: the ship was lost).
+  if (session.shipId != null && session.fromShipId !== session.shipId) {
     return { ...base, via: "respawn" };
   }
   const landed =

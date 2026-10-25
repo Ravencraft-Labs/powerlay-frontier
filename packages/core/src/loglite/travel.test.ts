@@ -39,6 +39,8 @@ describe("classifyHop", () => {
 
   it("detects a respawn by the ship changing", () => {
     expect(classifyHop(session(1, 2, [10, 11]), deployable, 2000, AT)?.via).toBe("respawn");
+    // As logged after a self-destruct: 'shipid': (None, 1000003691913), 'solarsystemid': (30019798, 30019801)
+    expect(classifyHop(session(30019798, 30019801, [null, 1000003691913]), null, 0, AT)?.via).toBe("respawn");
   });
 });
 
