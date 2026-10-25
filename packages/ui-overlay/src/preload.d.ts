@@ -45,8 +45,19 @@ export interface BuilderStageState {
   items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string; asteroids?: string[] }>;
 }
 
-/** "map" (POC): the mini-map overlay window, rendered by the desktop app. */
-export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map";
+/** "map" (POC): the mini-map overlay window, rendered by the desktop app. "toolbar": the overlay bar. */
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map" | "toolbar";
+
+export interface OverlayWindowState {
+  visible: boolean;
+  locked: boolean;
+}
+
+/** Which overlays are open and locked; builds keyed by id (only ones opened this session). */
+export interface OverlayBarState {
+  frames: Partial<Record<OverlayShellFrame, OverlayWindowState>>;
+  builds: Record<string, OverlayWindowState>;
+}
 
 export interface EFOverlayAPI {
   settings?: {
@@ -78,7 +89,13 @@ export interface EFOverlayAPI {
   auth?: {
     getSession: () => Promise<{ walletAddress: string; tribeId?: string; tribeName?: string } | null>;
   };
+  builds?: {
+    list: () => Promise<Array<{ id: string; name: string; updatedAt: number }>>;
+  };
   overlay?: {
+    getBarState?: () => Promise<OverlayBarState>;
+    setAllLocked?: (locked: boolean) => Promise<void>;
+    toggleBuilder?: (buildId: string) => Promise<void>;
     getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
     /** Mark an ore mined / a crafted item made (or undo) in the desktop app. */
     sendBuilderAction?: (buildId: string, action: { kind: "ore-done" | "item-done"; typeID: number; done: boolean } | { kind: "item-add"; typeID: number; delta: number } | { kind: "pick-step"; step: number | null } | { kind: "set-auto"; on: boolean } | { kind: "needed-add"; typeID: number; delta: number }) => void;

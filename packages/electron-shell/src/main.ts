@@ -24,10 +24,15 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
-/** "map" (POC) is the mini-map: same overlay mechanics, but rendered by the desktop renderer (?view=minimap). */
-type OverlayFrame = "contracts" | "builder" | "scout" | "map";
+/**
+ * "map" (POC) is the mini-map: same overlay mechanics, but rendered by the desktop renderer (?view=minimap).
+ * "toolbar" is the overlay bar that switches the other overlays on and off; it is never locked.
+ */
+type OverlayFrame = "contracts" | "builder" | "scout" | "map" | "toolbar";
+/** Overlays the toolbar switches (builds are listed separately). */
+const TOOLBAR_FRAMES = ["scout", "contracts", "map"] as const;
 const overlayWindows: Partial<Record<OverlayFrame, BrowserWindow>> = {};
-const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false, map: false };
+const overlayLockState: Record<OverlayFrame, boolean> = { contracts: false, builder: false, scout: false, map: false, toolbar: false };
 const builderOverlayWindows = new Map<string, BrowserWindow>();
 const overlayLockStateByBuild: Record<string, boolean> = {};
 
@@ -59,7 +64,7 @@ function loadOverlayBounds(): Partial<Record<OverlayFrame, OverlayBounds>> {
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw) as Record<string, { x?: number; y?: number; width?: number; height?: number }>;
     const result: Partial<Record<OverlayFrame, OverlayBounds>> = {};
-    for (const f of ["contracts", "builder", "scout", "map"] as OverlayFrame[]) {
+    for (const f of ["contracts", "builder", "scout", "map", "toolbar"] as OverlayFrame[]) {
       let b = data[f];
       if (f === "contracts" && !b && data["todo"]) b = data["todo"];
       if (b && Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height)) {
@@ -156,6 +161,21 @@ function saveBuilderOverlayBounds(buildId: string, bounds: OverlayBounds): void 
     fs.writeFileSync(p, JSON.stringify(existing, null, 0), "utf-8");
   } catch {
     /* ignore */
+  }
+}
+
+function setOverlayLocked(frame: OverlayFrame, locked: boolean, buildId?: string): void {
+  let w: BrowserWindow | undefined;
+  if (frame === "builder" && buildId) {
+    overlayLockStateByBuild[buildId] = locked;
+    w = builderOverlayWindows.get(buildId);
+  } else {
+    overlayLockState[frame] = locked;
+    w = overlayWindows[frame];
+  }
+  if (w && !w.isDestroyed()) {
+    if (locked) w.setIgnoreMouseEvents(true, { forward: true });
+    else w.setIgnoreMouseEvents(false);
   }
 }
 
@@ -296,6 +316,11 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
     },
   };
   w = new BrowserWindow(opts);
+  if (frame === "toolbar" && !savedBounds) {
+    // First open: top center of the primary display, clear of the game's own top bar.
+    const workArea = screen.getPrimaryDisplay().workArea;
+    w.setPosition(Math.round(workArea.x + workArea.width / 2 - 200), workArea.y + 48);
+  }
   // Use highest Z-order level to improve overlay staying on top (helps on some Windows setups)
   w.setAlwaysOnTop(true, "screen-saver");
   showOverFullscreenApps(w);
@@ -339,6 +364,19 @@ function getOrCreateOverlayWindow(frame: OverlayFrame): BrowserWindow {
     w.loadFile(base, { query });
   }
   return w;
+}
+
+/** Shows or hides the overlay toolbar and remembers it, so it comes back on the next launch. */
+function setToolbarVisible(visible: boolean): void {
+  const w = getOrCreateOverlayWindow("toolbar");
+  if (visible) w.showInactive();
+  else w.hide();
+  saveSettings({ ...loadSettings(), overlayToolbar: visible });
+}
+
+function isToolbarVisible(): boolean {
+  const w = overlayWindows.toolbar;
+  return !!w && !w.isDestroyed() && w.isVisible();
 }
 
 const MAP_GAP = 8;
@@ -540,6 +578,7 @@ app.whenReady().then(async () => {
   await runTailerTest();
 
   createMainWindow();
+  if (loadSettings().overlayToolbar) setToolbarVisible(true);
 
   const iconPath = getIconPath();
   if (iconPath) {
@@ -567,6 +606,10 @@ app.whenReady().then(async () => {
                 mainWindow.focus();
               }
             },
+          },
+          {
+            label: "Overlay toolbar",
+            click: () => setToolbarVisible(!isToolbarVisible()),
           },
           { type: "separator" },
           {
@@ -599,6 +642,10 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("overlay:toggle", (_event, frame: OverlayFrame) => {
   if (frame === "builder") return;
+  if (frame === "toolbar") {
+    setToolbarVisible(!isToolbarVisible());
+    return;
+  }
   const firstMapOpen = frame === "map" && !overlayWindows.map && !loadOverlayBounds().map;
   const w = getOrCreateOverlayWindow(frame);
   if (firstMapOpen) placeMapNextToScout(w);
@@ -636,7 +683,8 @@ ipcMain.handle("overlay:hide", (_event, frame: OverlayFrame, buildId?: string) =
     builderOverlayWindows.get(buildId)?.hide();
     return;
   }
-  if (frame !== "builder") overlayWindows[frame]?.hide();
+  if (frame === "toolbar") setToolbarVisible(false);
+  else if (frame !== "builder") overlayWindows[frame]?.hide();
 });
 
 ipcMain.handle("overlay:hide-builder", (_event, buildId: string) => {
@@ -660,6 +708,22 @@ ipcMain.on("overlay:builder-action", (_event, buildId: string, action: unknown) 
 ipcMain.handle("overlay:get-visible", (_event, frame: OverlayFrame) => {
   const w = overlayWindows[frame];
   return w && !w.isDestroyed() && w.isVisible();
+});
+
+/** Toolbar: which overlays are open and locked. Builds are keyed by id (only ones opened this session). */
+ipcMain.handle("overlay:get-bar-state", () => {
+  const isShown = (w: BrowserWindow | undefined) => !!w && !w.isDestroyed() && w.isVisible();
+  const frames: Record<string, { visible: boolean; locked: boolean }> = {};
+  for (const f of TOOLBAR_FRAMES) frames[f] = { visible: isShown(overlayWindows[f]), locked: overlayLockState[f] };
+  const builds: Record<string, { visible: boolean; locked: boolean }> = {};
+  for (const [id, w] of builderOverlayWindows) builds[id] = { visible: isShown(w), locked: overlayLockStateByBuild[id] ?? false };
+  return { frames, builds };
+});
+
+/** Toolbar: lock (click-through) or unlock every overlay at once. */
+ipcMain.handle("overlay:set-all-locked", (_event, locked: boolean) => {
+  for (const f of TOOLBAR_FRAMES) setOverlayLocked(f, !!locked);
+  for (const id of builderOverlayWindows.keys()) setOverlayLocked("builder", !!locked, id);
 });
 
 ipcMain.handle("overlay:get-lock-state", (_event, frame: OverlayFrame, buildId?: string) => {
@@ -699,22 +763,8 @@ ipcMain.handle("overlay:clear-user-size", (_event, frame: OverlayFrame, buildId?
 });
 
 ipcMain.handle("overlay:toggle-lock", (_event, frame: OverlayFrame, buildId?: string) => {
-  if (frame === "builder" && buildId) {
-    overlayLockStateByBuild[buildId] = !(overlayLockStateByBuild[buildId] ?? false);
-    const locked = overlayLockStateByBuild[buildId];
-    const w = builderOverlayWindows.get(buildId);
-    if (w && !w.isDestroyed()) {
-      if (locked) w.setIgnoreMouseEvents(true, { forward: true });
-      else w.setIgnoreMouseEvents(false);
-    }
-    return locked;
-  }
-  overlayLockState[frame] = !(overlayLockState[frame] ?? false);
-  const locked = overlayLockState[frame];
-  const w = overlayWindows[frame];
-  if (w && !w.isDestroyed()) {
-    if (locked) w.setIgnoreMouseEvents(true, { forward: true });
-    else w.setIgnoreMouseEvents(false);
-  }
-  return locked;
+  if (frame === "toolbar") return false;
+  const wasLocked = frame === "builder" && buildId ? overlayLockStateByBuild[buildId] ?? false : overlayLockState[frame] ?? false;
+  setOverlayLocked(frame, !wasLocked, buildId);
+  return !wasLocked;
 });

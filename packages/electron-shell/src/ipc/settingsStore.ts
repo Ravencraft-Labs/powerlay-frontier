@@ -33,6 +33,8 @@ export interface AppSettings {
   overlayOpacity?: number;
   /** Mini-map window background opacity, 0–100. Unset = same as `overlayOpacity`. */
   miniMapOpacity?: number;
+  /** Overlay toolbar was open when last used; it reopens on launch. */
+  overlayToolbar?: boolean;
   /** Ids of local plugins switched off in Settings. */
   disabledPlugins?: string[];
 }

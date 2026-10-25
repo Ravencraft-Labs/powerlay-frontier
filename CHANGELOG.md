@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Builder: crafting steps after mining (refining, components, final items) with progress you enter; the current step moves on when it is done, and the build overlay shows it.
 - Builder: free builds — track any planned items by hand (e.g. 1000 cans) without mining or recipe steps.
 - Build overlay: item icons, a "?" toggle for where-to-mine hints, done checkboxes synced with the app, and step switching.
+- Overlay bar: an in-game strip to show, hide and lock the Scout, Contracts, Map and build overlays without switching to the app. Open it from the header ("Overlay bar") or the tray menu; it reopens on the next launch.
 
 ### Changed
 

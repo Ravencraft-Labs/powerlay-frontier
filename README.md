@@ -168,7 +168,7 @@ See `docs/static-data-extraction.md` for the full operator guide and `docs/super
 
 ## Scripts
 
-- **`pnpm dev`** — Start desktop UI (Vite :5173), overlay UI (Vite :5174), then Electron. Use "Toggle overlay" in the desktop to show/hide the overlay.
+- **`pnpm dev`** — Start desktop UI (Vite :5173), overlay UI (Vite :5174), then Electron. Use "Toggle overlay" in the desktop to show/hide the overlay, or "Overlay bar" in the header for an in-game strip that switches all overlays.
 - **`pnpm build`** — Build all packages.
 - **`pnpm run build:portable`** — Build all packages and produce a Windows portable executable (no installer). Output is in `dist/`.
 - **`pnpm run build:mac`** — Build Mac package. Output is in `dist/`.

@@ -4,6 +4,7 @@ import { BuildMiningSection } from "./components/BuildMiningSection";
 import { ScoutSection } from "./components/ScoutSection";
 import { MapPocSection } from "./components/MapPocSection";
 import { SettingsModal, SettingsCogButton } from "./components/SettingsModal";
+import { OverlayToolbarToggle } from "./components/OverlayWithLock";
 import { LogLocateModal } from "./components/LogLocateModal";
 import { AuthProvider } from "./context/AuthContext";
 import { ContractsAccessProvider } from "./context/ContractsAccessContext";
@@ -174,16 +175,16 @@ export default function App() {
               </div>
             </nav>
             <div className="flex items-center gap-3 shrink-0">
+              <OverlayToolbarToggle />
               <WalletLoginButton />
               <SettingsCogButton onClick={() => setSettingsOpen(true)} />
             </div>
           </header>
           <main className="flex-1 min-h-0 p-6 flex flex-col gap-6 overflow-y-auto">
-            {activeTab === "builder" && (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <BuildMiningSection />
-              </div>
-            )}
+            {/* Kept mounted on other tabs: it feeds the build overlays (also opened from the overlay bar). */}
+            <div className={activeTab === "builder" ? "flex-1 min-h-0 flex flex-col" : "hidden"}>
+              <BuildMiningSection />
+            </div>
             {activeTab === "scout" && <ScoutSection />}
             {activeTab === "map" && (
               <div className="flex-1 min-h-0 flex flex-col">

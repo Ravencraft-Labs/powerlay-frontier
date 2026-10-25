@@ -46,25 +46,28 @@ contextBridge.exposeInMainWorld("efOverlay", {
     delete: (id: string) => ipcRenderer.invoke("builds:delete", id),
   },
   overlay: {
-    setContentSize: (frame: "contracts" | "builder" | "scout" | "map", width: number, height: number, buildId?: string) =>
+    setContentSize: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", width: number, height: number, buildId?: string) =>
       ipcRenderer.send("overlay:set-content-size", frame, width, height, buildId),
-    toggle: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:toggle", frame),
+    toggle: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar") => ipcRenderer.invoke("overlay:toggle", frame),
     toggleBuilder: (buildId: string) => ipcRenderer.invoke("overlay:toggle-builder", buildId),
     getVisibleBuilderIds: () => ipcRenderer.invoke("overlay:get-visible-builder-ids") as Promise<string[]>,
-    getVisible: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:get-visible", frame),
-    show: (frame: "contracts" | "builder" | "scout" | "map") => ipcRenderer.invoke("overlay:show", frame),
-    hide: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
+    getVisible: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar") => ipcRenderer.invoke("overlay:get-visible", frame),
+    show: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar") => ipcRenderer.invoke("overlay:show", frame),
+    hide: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", buildId?: string) => ipcRenderer.invoke("overlay:hide", frame, buildId),
     hideBuilder: (buildId: string) => ipcRenderer.invoke("overlay:hide-builder", buildId),
-    getLockState: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+    getLockState: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", buildId?: string) =>
       ipcRenderer.invoke("overlay:get-lock-state", frame, buildId),
-    toggleLock: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+    toggleLock: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", buildId?: string) =>
       ipcRenderer.invoke("overlay:toggle-lock", frame, buildId),
-    getUserSize: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+    getUserSize: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", buildId?: string) =>
       ipcRenderer.invoke("overlay:get-user-size", frame, buildId),
-    setUserSize: (frame: "contracts" | "builder" | "scout" | "map", width: number, height: number, buildId?: string) =>
+    setUserSize: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", width: number, height: number, buildId?: string) =>
       ipcRenderer.invoke("overlay:set-user-size", frame, width, height, buildId),
-    clearUserSize: (frame: "contracts" | "builder" | "scout" | "map", buildId?: string) =>
+    clearUserSize: (frame: "contracts" | "builder" | "scout" | "map" | "toolbar", buildId?: string) =>
       ipcRenderer.invoke("overlay:clear-user-size", frame, buildId),
+    /** Toolbar: which overlays are open and locked. */
+    getBarState: () => ipcRenderer.invoke("overlay:get-bar-state"),
+    setAllLocked: (locked: boolean) => ipcRenderer.invoke("overlay:set-all-locked", locked),
     getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>; plannedVolByTypeId?: Record<number, number> }>) =>
       ipcRenderer.send("overlay:set-builder-state", states),

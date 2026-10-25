@@ -152,7 +152,7 @@ export interface GameData {
 }
 
 /** "map" (POC): the mini-map overlay window. */
-export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map";
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map" | "toolbar";
 
 export interface EFOverlayAPI {
   contracts?: {
