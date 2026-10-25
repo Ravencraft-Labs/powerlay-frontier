@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("efOverlay", {
     /** Toolbar: which overlays are open and locked. */
     getBarState: () => ipcRenderer.invoke("overlay:get-bar-state"),
     setAllLocked: (locked: boolean) => ipcRenderer.invoke("overlay:set-all-locked", locked),
+    toggleAllVisible: () => ipcRenderer.invoke("overlay:toggle-all-visible"),
     getBuilderState: (buildId: string) => ipcRenderer.invoke("overlay:get-builder-state", buildId),
     setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number; asteroids?: string[] }>; plannedVolByTypeId?: Record<number, number> }>) =>
       ipcRenderer.send("overlay:set-builder-state", states),
@@ -152,6 +153,8 @@ contextBridge.exposeInMainWorld("efOverlay", {
     ingestClipboard: () => ipcRenderer.invoke("pocMap:ingest-clipboard"),
     addAdjacent: (anchorId: number | null, text?: string) => ipcRenderer.invoke("pocMap:add-adjacent", anchorId, text),
     addRoute: (text?: string) => ipcRenderer.invoke("pocMap:add-route", text),
+    getTravel: () => ipcRenderer.invoke("pocMap:get-travel"),
+    clearTravel: () => ipcRenderer.invoke("pocMap:clear-travel"),
   },
   plugins: {
     list: () => ipcRenderer.invoke("plugins:list"),

@@ -4,7 +4,7 @@
 //   3. Live data: systems with active scout entries, the current system from the chat log, and systems
 //      whose Cycle 7 name ↔ ID was confirmed via a chat link copied to the clipboard — bright
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ENTRY_COLORS, type MapData, type Pt } from "./useMapData";
+import { edgeColor, ENTRY_COLORS, TRAVEL_COLOR, type MapData, type Pt } from "./useMapData";
 
 interface View {
   cx: number;
@@ -38,7 +38,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   { data, showBase, selectedId, onSelect, followCurrent, transparent, className, children },
   ref,
 ) {
-  const { pts, byId, layers, edges, links, entriesBySystem, currentPt, layerNeighbours, nameOf } = data;
+  const { pts, byId, layers, visibleEdges, links, entriesBySystem, currentPt, layerNeighbours, nameOf, sessionHops, previousSystemId } = data;
   const [view, setView] = useState<View | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [hoverId, setHoverId] = useState<number | null>(null);
@@ -78,7 +78,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   useEffect(() => {
     if (!followCurrent || currentId == null) return;
     const p = byId.get(currentId);
-    if (p) setView((v) => ({ cx: p.wx, cy: p.wy, k: v && v.k > FOCUS_ZOOM / 4 ? v.k : FOCUS_ZOOM }));
+    if (p) setView((v) => ({ cx: p.wx, cy: p.wy, k: v?.k ?? FOCUS_ZOOM }));
   }, [followCurrent, currentId, byId]);
 
   const toScreen = useCallback(
@@ -164,19 +164,55 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       }
     }
 
-    // confirmed Cycle 7 connections — bright
-    ctx.strokeStyle = "rgba(103, 232, 249, 0.85)";
+    // confirmed Cycle 7 connections — bright, coloured by gate kind; several between one pair are drawn side by side
     ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    for (const { a, b } of edges) {
-      const pa = byId.get(a), pb = byId.get(b);
+    const byPair = new Map<string, typeof visibleEdges>();
+    for (const e of visibleEdges) {
+      const key = `${e.a}-${e.b}`;
+      (byPair.get(key) ?? byPair.set(key, []).get(key)!).push(e);
+    }
+    for (const group of byPair.values()) {
+      const pa = byId.get(group[0].a), pb = byId.get(group[0].b);
       if (!pa || !pb) continue;
       const [x1, y1] = toScreen(pa.wx, pa.wy);
       const [x2, y2] = toScreen(pb.wx, pb.wy);
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const nx = -(y2 - y1) / len, ny = (x2 - x1) / len;
+      group.forEach((e, i) => {
+        const off = (i - (group.length - 1) / 2) * 3.5;
+        ctx.strokeStyle = edgeColor(e);
+        ctx.beginPath();
+        ctx.moveTo(x1 + nx * off, y1 + ny * off);
+        ctx.lineTo(x2 + nx * off, y2 + ny * off);
+        ctx.stroke();
+      });
+    }
+
+    // this session's travel path; dashed where there was no gate (ship jump, respawn)
+    ctx.strokeStyle = TRAVEL_COLOR;
+    ctx.lineWidth = 2.2;
+    for (const h of sessionHops) {
+      const pa = byId.get(h.fromSystemId), pb = byId.get(h.toSystemId);
+      if (!pa || !pb) continue;
+      const [x1, y1] = toScreen(pa.wx, pa.wy);
+      const [x2, y2] = toScreen(pb.wx, pb.wy);
+      ctx.setLineDash(h.via === "stargate" || h.via === "deployable-gate" ? [] : [5, 4]);
+      ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = TRAVEL_COLOR;
+    for (const h of sessionHops) {
+      const p = byId.get(h.toSystemId);
+      if (!p) continue;
+      const [x, y] = toScreen(p.wx, p.wy);
+      if (!onScreen(x, y)) continue;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // selected system's gate links, brighter
     if (sel) {
@@ -229,6 +265,20 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       ctx.fillText(l.name ?? `${l.linkTexts[0]}…`, x + 5, y + 12);
     }
 
+    const prev = previousSystemId != null && previousSystemId !== currentId ? byId.get(previousSystemId) : undefined;
+    if (prev) {
+      const [x, y] = toScreen(prev.wx, prev.wy);
+      ctx.strokeStyle = TRAVEL_COLOR;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      if (prev.sys.id !== sel?.sys.id) {
+        ctx.fillStyle = TRAVEL_COLOR;
+        ctx.fillText(`◀ ${nameOf(prev)}`, x + 9, y + 4);
+      }
+    }
+
     if (currentPt) {
       const [x, y] = toScreen(currentPt.wx, currentPt.wy);
       ctx.strokeStyle = "#eab308";
@@ -257,7 +307,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       ctx.fillStyle = "#e4e4e7";
       ctx.fillText(nameOf(hov), x + 8, y - 8);
     }
-  }, [view, size, pts, byId, layers, showBase, entriesBySystem, currentPt, selectedId, hoverId, layerNeighbours, toScreen, links, nameOf, edges, transparent]);
+  }, [view, size, pts, byId, layers, showBase, entriesBySystem, currentPt, selectedId, hoverId, layerNeighbours, toScreen, links, nameOf, visibleEdges, transparent, sessionHops, previousSystemId]);
 
   // --- interaction ---
   const nearest = useCallback(

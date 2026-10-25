@@ -7,8 +7,10 @@
 import { app, clipboard, ipcMain } from "electron";
 import fs from "fs";
 import path from "path";
-import type { LogLiteEvent } from "@powerlay/core";
+import { classifyHop, type LogLiteEvent, type PendingJump, type TravelVia } from "@powerlay/core";
 import { getDataRoot } from "./gameDataLoader.js";
+import { loadSettings, saveSettings } from "./settingsStore.js";
+import { clearTravelSession, getTravel, onGateOwnerResolved, recordHop, startTravelSession } from "./travelLog.js";
 import { getCurrentSystem, onLocalSystemLine } from "../log/chatLogReader.js";
 import { getLogLiteStatus, startLogLiteListener, stopLogLiteListener } from "../log/logLiteListener.js";
 
@@ -119,9 +121,14 @@ function systemIdsInOrder(text: string): number[] {
 export interface PocEdge {
   a: number;
   b: number;
-  source: "adjacent" | "route" | "jump";
-  /** Stargate used, when the edge came from a jump. */
+  /** "jump": through an NPC stargate; "deployable": through an anchored gate or catapult. */
+  source: "adjacent" | "route" | "jump" | "deployable";
+  /** Gate used, when the edge came from a jump. */
   gateId?: number;
+  /** Deployable edges: "player" = on-chain gate, "offchain" = catapult or server gate; unset until looked up. */
+  gateOwner?: "player" | "offchain";
+  /** Player gates: the owner's tribe. */
+  gateTribeId?: number;
   at: string;
 }
 
@@ -129,9 +136,19 @@ function edgesPath(): string {
   return path.join(pocDataDir(), "poc-edges.json");
 }
 
+/**
+ * One NPC connection per system pair; every deployable gate (player gate, catapult) is a connection of its own,
+ * so a pair can have an NPC stargate and one or more gates at the same time.
+ */
+function edgeKey(e: Pick<PocEdge, "a" | "b" | "source" | "gateId">): string {
+  return e.source === "deployable" ? `${e.a}-${e.b}-g${e.gateId ?? "?"}` : `${e.a}-${e.b}`;
+}
+
 function loadEdges(): Record<string, PocEdge> {
   try {
-    return JSON.parse(fs.readFileSync(edgesPath(), "utf8")) as Record<string, PocEdge>;
+    const raw = JSON.parse(fs.readFileSync(edgesPath(), "utf8")) as Record<string, PocEdge>;
+    // Older files keyed deployable edges by the pair alone; re-key so they don't block the NPC link.
+    return Object.fromEntries(Object.values(raw).map((e) => [edgeKey(e), e]));
   } catch {
     return {};
   }
@@ -142,12 +159,22 @@ function saveEdges(pairs: [number, number][], source: PocEdge["source"], gateId?
   const added: PocEdge[] = [];
   for (const [x, y] of pairs) {
     if (x === y) continue;
-    const a = Math.min(x, y), b = Math.max(x, y);
-    const key = `${a}-${b}`;
-    if (!edges[key]) added.push((edges[key] = { a, b, source, ...(gateId != null && { gateId }), at: new Date().toISOString() }));
+    const edge: PocEdge = { a: Math.min(x, y), b: Math.max(x, y), source, ...(gateId != null && { gateId }), at: new Date().toISOString() };
+    const key = edgeKey(edge);
+    if (!edges[key]) added.push((edges[key] = edge));
   }
   fs.writeFileSync(edgesPath(), JSON.stringify(edges, null, 2), "utf8");
   return added;
+}
+
+function setEdgeGateOwner(x: number, y: number, gateId: number, gateOwner: NonNullable<PocEdge["gateOwner"]>, tribeId: number | null): void {
+  const edges = loadEdges();
+  const e = edges[edgeKey({ a: Math.min(x, y), b: Math.max(x, y), source: "deployable", gateId })];
+  if (!e || (e.gateOwner === gateOwner && (e.gateTribeId ?? null) === tribeId)) return;
+  e.gateOwner = gateOwner;
+  if (tribeId != null) e.gateTribeId = tribeId;
+  else delete e.gateTribeId;
+  fs.writeFileSync(edgesPath(), JSON.stringify(edges, null, 2), "utf8");
 }
 
 /** ID of the current system: straight from LogLite while connected, else via the Local log name. */
@@ -207,20 +234,18 @@ function addRoute(text: string): PocEdgeResult {
 
 export interface PocLogLiteFeedItem {
   at: string;
-  kind: "connected" | "disconnected" | "system" | "jump" | "edge-added" | "edge-known" | "name-bound" | "warp";
+  kind: "connected" | "disconnected" | "system" | "jump" | "hop" | "edge-added" | "edge-known" | "name-bound" | "warp";
   text: string;
 }
 
 /** A Local log line and a session change this close together describe the same arrival. */
 const NAME_BIND_WINDOW_MS = 10_000;
-/** Session change this soon after a stargate jump from the old system is that jump landing. */
-const JUMP_LANDING_WINDOW_MS = 60_000;
 const FEED_LIMIT = 30;
 
 let logLiteSystemId: number | null = null;
 let lastSession: { systemId: number; receivedAt: number } | null = null;
 let lastLocal: { name: string; receivedAt: number } | null = null;
-let pendingJump: { fromSystemId: number; gateId: number; receivedAt: number } | null = null;
+let pendingJump: PendingJump | null = null;
 let feed: PocLogLiteFeedItem[] = [];
 let stopLocalListener: (() => void) | null = null;
 
@@ -251,8 +276,10 @@ function tryBindName(): void {
 function onLogLiteEvent(event: LogLiteEvent): void {
   const now = Date.now();
   if (event.kind === "jump") {
-    pendingJump = { fromSystemId: event.fromSystemId, gateId: event.gateId, receivedAt: now };
-    pushFeed("jump", `Jumping from ${systemLabel(event.fromSystemId)} via gate ${event.gateId}`);
+    const fromSystemId = event.fromSystemId ?? logLiteSystemId;
+    pendingJump = { gate: event.gate, gateId: event.gateId, fromSystemId, receivedAt: now };
+    const via = event.gate === "stargate" ? "stargate" : "deployable gate";
+    pushFeed("jump", `Jumping${fromSystemId != null ? ` from ${systemLabel(fromSystemId)}` : ""} via ${via} ${event.gateId}`);
     return;
   }
   if (event.kind === "warp") {
@@ -265,21 +292,29 @@ function onLogLiteEvent(event: LogLiteEvent): void {
   tryBindName();
   pushFeed("system", `Current system: ${systemLabel(event.systemId)}`);
 
-  const jump = pendingJump;
+  const hop = classifyHop(event, pendingJump, now, new Date(now).toISOString());
   pendingJump = null;
-  if (
-    jump &&
-    event.fromSystemId === jump.fromSystemId &&
-    event.systemId !== jump.fromSystemId &&
-    now - jump.receivedAt <= JUMP_LANDING_WINDOW_MS
-  ) {
-    const added = saveEdges([[jump.fromSystemId, event.systemId]], "jump", jump.gateId);
-    const label = `${systemLabel(jump.fromSystemId)} ↔ ${systemLabel(event.systemId)}`;
+  if (!hop) return;
+  recordHop(hop);
+  pushFeed("hop", `${VIA_LABEL[hop.via]}: ${systemLabel(hop.fromSystemId)} → ${systemLabel(hop.toSystemId)}`);
+  // Only gates make connections; a ship jump or respawn can cross any distance.
+  if (hop.via === "stargate" || hop.via === "deployable-gate") {
+    const added = saveEdges([[hop.fromSystemId, hop.toSystemId]], hop.via === "stargate" ? "jump" : "deployable", hop.gateId);
+    const label = `${systemLabel(hop.fromSystemId)} ↔ ${systemLabel(hop.toSystemId)}`;
     pushFeed(added.length > 0 ? "edge-added" : "edge-known", added.length > 0 ? `New link on map: ${label}` : `Link already known: ${label}`);
   }
 }
 
+const VIA_LABEL: Record<TravelVia, string> = {
+  stargate: "Stargate",
+  "deployable-gate": "Deployable gate",
+  "ship-jump": "Ship jump",
+  respawn: "Respawn",
+};
+
 function setLogLite(on: boolean): void {
+  // Remembered so travel keeps being recorded after an app restart.
+  if (loadSettings().logLite !== on) saveSettings({ ...loadSettings(), logLite: on });
   stopLocalListener?.();
   stopLocalListener = null;
   stopLogLiteListener();
@@ -293,7 +328,11 @@ function setLogLite(on: boolean): void {
   });
   startLogLiteListener({
     onEvent: onLogLiteEvent,
-    onConnection: (connected) => pushFeed(connected ? "connected" : "disconnected", connected ? "Game client connected" : "Game client disconnected"),
+    onConnection: (connected) => {
+      // A client connecting is a new game session: the travel path starts over.
+      if (connected) startTravelSession();
+      pushFeed(connected ? "connected" : "disconnected", connected ? "Game client connected" : "Game client disconnected");
+    },
   });
 }
 
@@ -302,6 +341,19 @@ let lastClipboard = "";
 let lastIngested: PocSystemLink[] = [];
 
 export function registerPocMapHandlers(): void {
+  onGateOwnerResolved((hop) => {
+    const o = hop.gateOwner;
+    if (hop.gateId == null || !o || o.kind === "unknown") return;
+    setEdgeGateOwner(hop.fromSystemId, hop.toSystemId, hop.gateId, o.kind, o.kind === "player" ? o.tribeId : null);
+  });
+  if (loadSettings().logLite) setLogLite(true);
+
+  ipcMain.handle("pocMap:get-travel", () => getTravel());
+  ipcMain.handle("pocMap:clear-travel", () => {
+    clearTravelSession();
+    return getTravel();
+  });
+
   ipcMain.handle("pocMap:watch-clipboard", async (_event, on: boolean) => {
     if (clipboardTimer) clearInterval(clipboardTimer);
     clipboardTimer = null;

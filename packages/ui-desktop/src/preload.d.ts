@@ -1,4 +1,5 @@
 import type {
+  TravelHop,
   TribeTodo,
   BuildPlan,
   TypesMap,
@@ -305,6 +306,8 @@ export interface EFOverlayAPI {
     ingestClipboard: () => Promise<PocSystemLink[]>;
     addAdjacent: (anchorId: number | null, text?: string) => Promise<PocEdgeResult>;
     addRoute: (text?: string) => Promise<PocEdgeResult>;
+    getTravel: () => Promise<PocTravel>;
+    clearTravel: () => Promise<PocTravel>;
   };
   /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
   plugins?: {
@@ -344,9 +347,20 @@ export interface PocMapBase {
 export interface PocEdge {
   a: number;
   b: number;
-  source: "adjacent" | "route" | "jump";
+  source: "adjacent" | "route" | "jump" | "deployable";
   gateId?: number;
+  /** Deployable edges: "player" = on-chain gate, "offchain" = catapult or server gate; unset until looked up. */
+  gateOwner?: "player" | "offchain";
+  /** Player gates: the owner's tribe. */
+  gateTribeId?: number;
   at: string;
+}
+
+/** Travel journal (LogLite): hops of the current game session, plus the very last hop for "previous system". */
+export interface PocTravel {
+  sessionStartedAt: string | null;
+  hops: TravelHop[];
+  lastHop: TravelHop | null;
 }
 
 export interface PocEdgeResult {
@@ -372,7 +386,7 @@ declare global {
 
 export interface PocLogLiteFeedItem {
   at: string;
-  kind: "connected" | "disconnected" | "system" | "jump" | "edge-added" | "edge-known" | "name-bound" | "warp";
+  kind: "connected" | "disconnected" | "system" | "jump" | "hop" | "edge-added" | "edge-known" | "name-bound" | "warp";
   text: string;
 }
 

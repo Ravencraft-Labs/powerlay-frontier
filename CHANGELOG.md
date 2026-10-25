@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Builder: crafting steps after mining (refining, components, final items) with progress you enter; the current step moves on when it is done, and the build overlay shows it.
 - Builder: free builds — track any planned items by hand (e.g. 1000 cans) without mining or recipe steps.
 - Build overlay: item icons, a "?" toggle for where-to-mine hints, done checkboxes synced with the app, and step switching.
-- Overlay bar: an in-game strip to show, hide and lock the Scout, Contracts, Map and build overlays without switching to the app. Open it from the header ("Overlay bar") or the tray menu; it reopens on the next launch.
+- Map (POC): travel log from LogLite — every system change of the game session with how it happened (NPC stargate, deployable gate, ship jump, respawn); deployable gates show their owner and tribe from the chain, or "not on chain" for catapults and server gates.
+- Map (POC): the previous system and this session's path are drawn on the map and the mini-map.
+- Map (POC): "Read LogLite" stays on after a restart.
+- Map (POC): connections are coloured and filterable by kind (NPC stargates, player gates — optionally only your tribe's — catapults / server gates); several connections between two systems are drawn side by side and listed per neighbour.
+- Overlay bar: an in-game strip to show, hide and lock the Scout, Contracts, Map and build overlays without switching to the app; the eye hides all open overlays and brings them back. Open it from the header ("Overlay bar") or the tray menu; it reopens on the next launch.
 
 ### Changed
 

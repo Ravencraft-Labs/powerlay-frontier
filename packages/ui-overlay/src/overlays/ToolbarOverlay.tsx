@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useEfOverlay } from "../hooks/useEfOverlay";
 import type { OverlayBarState, OverlayShellFrame, OverlayWindowState } from "../preload.d";
+import logoUrl from "../assets/logo.png";
 
 const MODULES: Array<{ frame: OverlayShellFrame; label: string }> = [
   { frame: "scout", label: "Scout" },
@@ -19,23 +20,50 @@ function LockIcon({ open, size = 12 }: { open?: boolean; size?: number }) {
   );
 }
 
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {!open && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
+/** Always rendered (open or closed) so locking never changes the bar's width. */
+function LockToggle({ locked, onClick, title }: { locked: boolean; onClick: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      className={`overlay-no-drag w-5 h-6 shrink-0 flex items-center justify-center rounded-sm transition-colors hover:bg-border ${
+        locked ? "text-accent" : "text-muted/60 hover:text-text"
+      }`}
+      onClick={onClick}
+      title={title}
+    >
+      <LockIcon open={!locked} size={11} />
+    </button>
+  );
+}
+
 function ToolbarButton({
   label,
   state,
   onClick,
-  onContextMenu,
+  onToggleLock,
   title,
   children,
 }: {
   label: string;
   state?: OverlayWindowState;
   onClick: () => void;
-  onContextMenu?: () => void;
+  /** Lockable overlays get a lock button beside the label; right-click on the label does the same. */
+  onToggleLock?: () => void;
   title?: string;
   children?: React.ReactNode;
 }) {
   const on = !!state?.visible;
-  return (
+  const button = (
     <button
       type="button"
       className={`overlay-no-drag flex items-center gap-1 px-2 h-6 rounded-sm text-[11px] font-semibold uppercase tracking-wider border transition-colors ${
@@ -44,20 +72,27 @@ function ToolbarButton({
       onClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();
-        onContextMenu?.();
+        onToggleLock?.();
       }}
       title={title}
     >
       {label}
-      {on && state?.locked && <LockIcon />}
       {children}
     </button>
+  );
+  if (!onToggleLock) return button;
+  const locked = !!state?.locked;
+  return (
+    <span className="flex items-center">
+      {button}
+      <LockToggle locked={locked} onClick={onToggleLock} title={locked ? `Unlock the ${label} overlay` : `Lock the ${label} overlay (click-through)`} />
+    </span>
   );
 }
 
 /**
  * Overlay bar: switches the other overlays on and off without going back to the app window.
- * Right-click a module to lock/unlock just that overlay. The bar itself is never locked.
+ * Each overlay has its own lock button (right-click on its name does the same). The bar itself is never locked.
  */
 export function ToolbarOverlay() {
   const api = useEfOverlay();
@@ -120,6 +155,7 @@ export function ToolbarOverlay() {
   ];
   const allLocked = visible.length > 0 && visible.every((s) => s.locked);
   const openBuilds = Object.values(bar.builds).filter((s) => s.visible).length;
+  const stashed = bar.stashed ?? 0;
 
   return (
     <div
@@ -128,9 +164,8 @@ export function ToolbarOverlay() {
       style={{ backgroundColor: `color-mix(in srgb, var(--color-bg) ${bgOpacity}%, transparent)` }}
     >
       <div className="flex items-center gap-0.5 px-1.5 py-1">
-        <span className="flex items-center gap-1.5 pr-2 mr-0.5 border-r border-border/90 text-[11px] font-bold tracking-wider text-text" title="Drag to move">
-          <span className="w-[3px] h-3.5 bg-accent rounded-sm" />
-          PF
+        <span className="flex items-center pr-1.5 mr-0.5 border-r border-border/90" title="Powerlay: drag to move">
+          <img src={logoUrl} alt="Powerlay" width={18} height={18} className="rounded-sm" draggable={false} />
         </span>
         {MODULES.map(({ frame, label }) => (
           <ToolbarButton
@@ -138,8 +173,8 @@ export function ToolbarOverlay() {
             label={label}
             state={bar.frames[frame]}
             onClick={() => run(api?.overlay?.toggle?.(frame))}
-            onContextMenu={() => run(api?.overlay?.toggleLock(frame))}
-            title={`Show/hide the ${label} overlay. Right-click: lock/unlock it`}
+            onToggleLock={() => run(api?.overlay?.toggleLock(frame))}
+            title={`Show/hide the ${label} overlay`}
           />
         ))}
         <ToolbarButton
@@ -148,13 +183,24 @@ export function ToolbarOverlay() {
           onClick={() => setBuildsOpen((o) => !o)}
           title="Build overlays"
         >
-          {openBuilds > 0 && <span className="tabular-nums">{openBuilds}</span>}
+          <span className="tabular-nums min-w-[1ch]">{openBuilds > 0 ? openBuilds : ""}</span>
           <span className="text-[9px]">{buildsOpen ? "▲" : "▼"}</span>
         </ToolbarButton>
         <span className="w-px h-4 mx-1 bg-border" />
         <button
           type="button"
-          className={`overlay-no-drag w-6 h-6 flex items-center justify-center rounded-sm transition-colors hover:bg-border ${allLocked ? "text-accent" : "text-muted hover:text-text"}`}
+          className={`overlay-no-drag w-6 h-6 flex items-center justify-center rounded-sm transition-colors hover:bg-border disabled:opacity-40 ${
+            stashed > 0 && visible.length === 0 ? "text-accent" : "text-muted hover:text-text"
+          }`}
+          onClick={() => run(api?.overlay?.toggleAllVisible?.())}
+          disabled={visible.length === 0 && stashed === 0}
+          title={visible.length > 0 ? "Hide all overlays" : "Show the hidden overlays again"}
+        >
+          <EyeIcon open={visible.length > 0 || stashed === 0} />
+        </button>
+        <button
+          type="button"
+          className={`overlay-no-drag w-6 h-6 flex items-center justify-center rounded-sm transition-colors hover:bg-border disabled:opacity-40 ${allLocked ? "text-accent" : "text-muted hover:text-text"}`}
           onClick={() => run(api?.overlay?.setAllLocked?.(!allLocked))}
           disabled={visible.length === 0}
           title={allLocked ? "Unlock all overlays" : "Lock all overlays (click-through)"}
@@ -178,24 +224,27 @@ export function ToolbarOverlay() {
           {builds.map((b) => {
             const s = bar.builds[b.id];
             const on = !!s?.visible;
+            const locked = !!s?.locked;
+            const toggleLock = () => run(api?.overlay?.toggleLock("builder", b.id));
             return (
-              <button
-                key={b.id}
-                type="button"
-                className={`flex items-center gap-1.5 w-0 min-w-full px-2 h-6 rounded-sm text-[12px] text-left transition-colors ${
-                  on ? "bg-accent/15 text-accent" : "text-muted hover:text-text hover:bg-border"
-                }`}
-                onClick={() => run(api?.overlay?.toggleBuilder?.(b.id))}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  if (on) run(api?.overlay?.toggleLock("builder", b.id));
-                }}
-                title={`${b.name}: show/hide. Right-click: lock/unlock`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? "bg-accent" : "bg-border-input"}`} />
-                <span className="flex-1 min-w-0 truncate">{b.name}</span>
-                {on && s?.locked && <LockIcon />}
-              </button>
+              <div key={b.id} className="flex items-center w-0 min-w-full">
+                <button
+                  type="button"
+                  className={`flex-1 min-w-0 flex items-center gap-1.5 px-2 h-6 rounded-sm text-[12px] text-left transition-colors ${
+                    on ? "bg-accent/15 text-accent" : "text-muted hover:text-text hover:bg-border"
+                  }`}
+                  onClick={() => run(api?.overlay?.toggleBuilder?.(b.id))}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    toggleLock();
+                  }}
+                  title={`${b.name}: show/hide`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? "bg-accent" : "bg-border-input"}`} />
+                  <span className="flex-1 min-w-0 truncate">{b.name}</span>
+                </button>
+                <LockToggle locked={locked} onClick={toggleLock} title={locked ? "Unlock this build overlay" : "Lock this build overlay (click-through)"} />
+              </div>
             );
           })}
         </div>

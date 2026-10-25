@@ -25,13 +25,21 @@ export interface LogLiteSessionEvent {
   systemId: number;
   charId: number | null;
   shipId: number | null;
+  /** Ship before the change, when the ship changed with it (respawn after death). */
+  fromShipId: number | null;
 }
 
-/** Jump started through a stargate; the destination arrives as the next session event. */
+/**
+ * Jump started through a gate; the destination arrives as the next session event.
+ * "stargate": a fixed NPC stargate (`Stargate Jump from <system> to <gate>`).
+ * "deployable": an anchored gate, player-built or server-placed (`Jump through deployable stargate <item>`);
+ * the client doesn't log the source system for these.
+ */
 export interface LogLiteJumpEvent {
   kind: "jump";
   time: Date;
-  fromSystemId: number;
+  gate: "stargate" | "deployable";
+  fromSystemId: number | null;
   gateId: number;
 }
 

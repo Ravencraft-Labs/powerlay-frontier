@@ -4,7 +4,20 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import type { PocEdgeResult, PocLogLiteStatus } from "../preload";
 import { OverlayWithLock } from "./OverlayWithLock";
 import { FOCUS_ZOOM, MapCanvas, type MapCanvasHandle } from "./map/MapCanvas";
-import { ENTRY_COLORS, useMapData, type Pt } from "./map/useMapData";
+import { TravelPanel } from "./map/TravelPanel";
+import {
+  EDGE_COLORS,
+  EDGE_KIND_LABELS,
+  EDGE_KIND_SHORT,
+  edgeColor,
+  edgeKind,
+  ENTRY_COLORS,
+  TRAVEL_COLOR,
+  useMapData,
+  type EdgeKind,
+  type Pt,
+} from "./map/useMapData";
+import type { PocEdge } from "../preload";
 
 const sectionCls = "bg-surface rounded-lg px-5 py-4 border border-border";
 const btnCls =
@@ -34,7 +47,11 @@ export function MapPocSection() {
     layerNeighbours,
     entriesBySystem,
     unmappedEntries,
-    c7Neighbours,
+    edgesBySystem,
+    visibleEdges,
+    edgeFilter,
+    setEdgeFilter,
+    myTribeId,
     currentPt,
   } = data;
   const [showBase, setShowBase] = useState(true);
@@ -66,7 +83,23 @@ export function MapPocSection() {
 
   const selected = selectedId != null ? byId.get(selectedId) : undefined;
   const selectedEntries = selected ? entriesBySystem.get(selected.sys.id) ?? [] : [];
-  const selectedC7 = selected ? c7Neighbours.get(selected.sys.id) ?? [] : [];
+  /** Selected system's connections grouped by neighbour: two entries for one neighbour = two different ways there. */
+  const selectedLinks = useMemo(() => {
+    if (!selected) return [];
+    const byNeighbour = new Map<number, PocEdge[]>();
+    for (const e of edgesBySystem.get(selected.sys.id) ?? []) {
+      const n = e.a === selected.sys.id ? e.b : e.a;
+      (byNeighbour.get(n) ?? byNeighbour.set(n, []).get(n)!).push(e);
+    }
+    return [...byNeighbour.entries()];
+  }, [selected, edgesBySystem]);
+
+  function edgeTitle(e: PocEdge): string {
+    const parts = [EDGE_KIND_LABELS[edgeKind(e)]];
+    if (e.gateTribeId != null) parts.push(e.gateTribeId === myTribeId ? "your tribe" : `tribe ${e.gateTribeId}`);
+    if (e.gateId != null) parts.push(`gate ${e.gateId}`);
+    return parts.join(" · ");
+  }
 
   function reportEdges(res: PocEdgeResult | undefined, what: string) {
     if (!res) return;
@@ -128,6 +161,38 @@ export function MapPocSection() {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap text-xs text-muted">
+        <span>Connections:</span>
+        {(Object.keys(EDGE_COLORS) as EdgeKind[]).map((k) => (
+          <React.Fragment key={k}>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={edgeFilter.kinds[k]}
+                onChange={(e) => setEdgeFilter({ ...edgeFilter, kinds: { ...edgeFilter.kinds, [k]: e.target.checked } })}
+              />
+              <span style={{ color: EDGE_COLORS[k] }}>—</span>
+              {EDGE_KIND_LABELS[k]} ({edges.filter((x) => edgeKind(x) === k).length})
+            </label>
+            {k === "player" && (
+              <label
+                className={`flex items-center gap-1 ${myTribeId == null ? "opacity-50" : "cursor-pointer"}`}
+                title={myTribeId == null ? "Sign in with your wallet so the app knows your tribe" : undefined}
+              >
+                <input
+                  type="checkbox"
+                  disabled={myTribeId == null || !edgeFilter.kinds.player}
+                  checked={edgeFilter.myTribeOnly}
+                  onChange={(e) => setEdgeFilter({ ...edgeFilter, myTribeOnly: e.target.checked })}
+                />
+                only my tribe
+              </label>
+            )}
+          </React.Fragment>
+        ))}
+        <span className="text-[11px]">Several connections between two systems are drawn side by side.</span>
+      </div>
+
       {baseError && <div className="px-3 py-2 rounded-md border border-red-500/40 bg-red-500/10 text-xs text-red-400">{baseError}</div>}
 
       <div className="flex-1 min-h-[480px] flex gap-3">
@@ -149,7 +214,11 @@ export function MapPocSection() {
               ) : null,
             )}
             <div>
-              <span className="text-cyan-300">—</span> Cycle 7 connections confirmed in game ({edges.length})
+              Cycle 7 connections confirmed in game: {visibleEdges.length} of {edges.length} shown (filter above)
+            </div>
+            <div>
+              <span style={{ color: TRAVEL_COLOR }}>—</span> this session's path (dashed: ship jump / respawn) ·{" "}
+              <span style={{ color: TRAVEL_COLOR }}>◯</span> previous system
             </div>
             <div>
               <span className="text-accent">◯</span> current system ·{" "}
@@ -165,6 +234,7 @@ export function MapPocSection() {
             await window.efOverlay?.pocMap?.setLogLite?.(on);
             setLogLite((await window.efOverlay?.pocMap?.getLogLiteStatus?.()) ?? null);
           }} />}
+          <TravelPanel data={data} onFocus={(p) => focusOn(p, FOCUS_ZOOM)} />
           <div className="p-3 rounded-md border border-border/50 bg-bg/40 text-xs text-muted flex flex-col gap-1.5">
             <div className="text-text font-medium">Chat links → map</div>
             <div>Watching the clipboard. Copy a chat message with a system link — it gets pinned to the map.</div>
@@ -232,16 +302,27 @@ export function MapPocSection() {
               </div>
               <div className="text-[11px] text-muted italic">Position from Cycle 6 data — may be wrong now.</div>
               <div>
-                <div className="text-xs text-muted mb-1">Cycle 7 connections, confirmed ({selectedC7.length})</div>
-                <div className="flex flex-wrap gap-1">
-                  {selectedC7.map((nid) => {
+                <div className="text-xs text-muted mb-1">Cycle 7 connections, confirmed ({selectedLinks.length})</div>
+                <div className="flex flex-col gap-1">
+                  {selectedLinks.map(([nid, list]) => {
                     const n = byId.get(nid);
-                    return n ? (
-                      <button key={nid} type="button" className={`${btnCls} !text-cyan-300`} onClick={() => focusOn(n)}>
-                        {nameOf(n)}
-                      </button>
-                    ) : (
-                      <span key={nid} className="text-xs text-muted">{nid}</span>
+                    return (
+                      <div key={nid} className="flex items-center gap-1.5 flex-wrap">
+                        {n ? (
+                          <button type="button" className={btnCls} onClick={() => focusOn(n)}>
+                            {nameOf(n)}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted">{linkById.get(nid)?.name ?? nid}</span>
+                        )}
+                        {list.map((e, i) => (
+                          <span key={i} className="text-[11px]" style={{ color: edgeColor(e) }} title={edgeTitle(e)}>
+                            ● {EDGE_KIND_SHORT[edgeKind(e)]}
+                            {e.gateTribeId != null && e.gateTribeId === myTribeId ? " (yours)" : ""}
+                          </span>
+                        ))}
+                        {list.length > 1 && <span className="text-[11px] text-muted">{list.length} ways</span>}
+                      </div>
                     );
                   })}
                 </div>
@@ -336,6 +417,7 @@ const LOGLITE_STATE_LABEL: Record<PocLogLiteStatus["state"], string> = {
 
 const FEED_COLORS: Partial<Record<string, string>> = {
   "edge-added": "text-cyan-300",
+  hop: "text-purple-400",
   "name-bound": "text-green-400",
   system: "text-text",
   disconnected: "text-amber-400",
@@ -354,7 +436,7 @@ function LogLitePanel({ status, onToggle }: { status: PocLogLiteStatus; onToggle
       <div className={status.state === "connected" ? "text-green-400" : status.state === "error" ? "text-red-400" : ""}>
         {status.error ?? LOGLITE_STATE_LABEL[status.state]}
       </div>
-      {on && <div>Reads the game client's debug log instead of LogLite (port 3273): jumps add connections, names bind to IDs.</div>}
+      {on && <div>Reads the game client's debug log instead of LogLite (port 3273): jumps add connections and the travel log, names bind to IDs. Stays on after a restart.</div>}
       {status.feed.slice(0, 10).map((f, i) => (
         <div key={`${f.at}-${i}`} className={FEED_COLORS[f.kind] ?? ""}>
           <span className="text-muted">{new Date(f.at).toLocaleTimeString()}</span> {f.text}

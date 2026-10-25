@@ -57,6 +57,8 @@ export interface OverlayWindowState {
 export interface OverlayBarState {
   frames: Partial<Record<OverlayShellFrame, OverlayWindowState>>;
   builds: Record<string, OverlayWindowState>;
+  /** Overlays hidden by the eye button, waiting to be shown again. */
+  stashed?: number;
 }
 
 export interface EFOverlayAPI {
@@ -95,6 +97,7 @@ export interface EFOverlayAPI {
   overlay?: {
     getBarState?: () => Promise<OverlayBarState>;
     setAllLocked?: (locked: boolean) => Promise<void>;
+    toggleAllVisible?: () => Promise<void>;
     toggleBuilder?: (buildId: string) => Promise<void>;
     getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
     /** Mark an ore mined / a crafted item made (or undo) in the desktop app. */

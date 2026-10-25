@@ -710,6 +710,14 @@ ipcMain.handle("overlay:get-visible", (_event, frame: OverlayFrame) => {
   return w && !w.isDestroyed() && w.isVisible();
 });
 
+/** Overlays hidden by the toolbar's eye button, shown again by its next press. */
+const stashedOverlays = new Set<BrowserWindow>();
+
+function visibleToolbarWindows(): BrowserWindow[] {
+  const all = [...TOOLBAR_FRAMES.map((f) => overlayWindows[f]), ...builderOverlayWindows.values()];
+  return all.filter((w): w is BrowserWindow => !!w && !w.isDestroyed() && w.isVisible());
+}
+
 /** Toolbar: which overlays are open and locked. Builds are keyed by id (only ones opened this session). */
 ipcMain.handle("overlay:get-bar-state", () => {
   const isShown = (w: BrowserWindow | undefined) => !!w && !w.isDestroyed() && w.isVisible();
@@ -717,7 +725,22 @@ ipcMain.handle("overlay:get-bar-state", () => {
   for (const f of TOOLBAR_FRAMES) frames[f] = { visible: isShown(overlayWindows[f]), locked: overlayLockState[f] };
   const builds: Record<string, { visible: boolean; locked: boolean }> = {};
   for (const [id, w] of builderOverlayWindows) builds[id] = { visible: isShown(w), locked: overlayLockStateByBuild[id] ?? false };
-  return { frames, builds };
+  for (const w of stashedOverlays) if (w.isDestroyed()) stashedOverlays.delete(w);
+  return { frames, builds, stashed: stashedOverlays.size };
+});
+
+/** Toolbar eye: hide every open overlay, or (when none is open) bring back the ones it hid. */
+ipcMain.handle("overlay:toggle-all-visible", () => {
+  const open = visibleToolbarWindows();
+  if (open.length > 0) {
+    for (const w of open) {
+      stashedOverlays.add(w);
+      w.hide();
+    }
+    return;
+  }
+  for (const w of stashedOverlays) if (!w.isDestroyed()) w.showInactive();
+  stashedOverlays.clear();
 });
 
 /** Toolbar: lock (click-through) or unlock every overlay at once. */

@@ -33,6 +33,8 @@ export interface AppSettings {
   overlayOpacity?: number;
   /** Mini-map window background opacity, 0–100. Unset = same as `overlayOpacity`. */
   miniMapOpacity?: number;
+  /** Map: reading the game client's debug log (LogLite stand-in) was on when last used. */
+  logLite?: boolean;
   /** Overlay toolbar was open when last used; it reopens on launch. */
   overlayToolbar?: boolean;
   /** Ids of local plugins switched off in Settings. */

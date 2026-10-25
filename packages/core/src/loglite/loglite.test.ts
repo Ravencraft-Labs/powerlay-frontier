@@ -95,14 +95,14 @@ describe("parseLogLiteEvent", () => {
         "GameUI::OnSessionChanged:{'charid': (None, 2112115421), 'corpid': (None, 1000167), 'hqID': (None, 60000085), 'shipid': (None, 1000002649011), 'solarsystemid': (None, 30019771), 'regionid': (None, 10000198), 'constellationid': (None, 20001553), 'genderID': (None, False), 'solarsystemid2': (None, 30019771), 'locationid': (None, 30019771)} - Activating space view without a ego ball properly inserted into a proper ballpark.",
       ),
     );
-    expect(ev).toEqual({ kind: "session", time: new Date(0), fromSystemId: null, systemId: 30019771, charId: 2112115421, shipId: 1000002649011 });
+    expect(ev).toEqual({ kind: "session", time: new Date(0), fromSystemId: null, systemId: 30019771, charId: 2112115421, shipId: 1000002649011, fromShipId: null });
   });
 
   it("parses a session change caused by a jump", () => {
     const ev = parseLogLiteEvent(
       msg("svc", "gameui", "GameUI::OnSessionChanged:{'solarsystemid': (30019771, 30019772), 'solarsystemid2': (30019771, 30019772), 'locationid': (30019771, 30019772)} - Activating space view"),
     );
-    expect(ev).toEqual({ kind: "session", time: new Date(0), fromSystemId: 30019771, systemId: 30019772, charId: null, shipId: null });
+    expect(ev).toEqual({ kind: "session", time: new Date(0), fromSystemId: 30019771, systemId: 30019772, charId: null, shipId: null, fromShipId: null });
   });
 
   it("ignores session changes without a solar system", () => {
@@ -114,8 +114,19 @@ describe("parseLogLiteEvent", () => {
     expect(parseLogLiteEvent(msg("svc", "menu", "Stargate Jump from 30019771 to 60011318"))).toEqual({
       kind: "jump",
       time: new Date(0),
+      gate: "stargate",
       fromSystemId: 30019771,
       gateId: 60011318,
+    });
+  });
+
+  it("parses a deployable stargate jump", () => {
+    expect(parseLogLiteEvent(msg("svc", "menu", "Jump through deployable stargate 1000002872455"))).toEqual({
+      kind: "jump",
+      time: new Date(0),
+      gate: "deployable",
+      fromSystemId: null,
+      gateId: 1000002872455,
     });
   });
 

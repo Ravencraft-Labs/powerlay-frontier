@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ScoutEntry } from "@powerlay/core";
 import { usePlugins } from "../../plugins/PluginsProvider";
 import type { MapEdgeLayer } from "../../plugins/types";
-import type { PocEdge, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink } from "../../preload";
+import type { PocEdge, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
 
 /** Game coordinates are metres (~1e19); scale to a comfortable world unit. */
 const WORLD_SCALE = 1e-16;
@@ -15,6 +15,82 @@ export const ENTRY_COLORS: Record<string, string> = {
   structure: "#fb923c",
   note: "#a1a1aa",
 };
+
+/** This session's travel path and the system we came from. */
+export const TRAVEL_COLOR = "#c084fc";
+
+/** Confirmed connections by gate kind: NPC stargates (also Adjacent / Route), player gates, catapults / server gates. */
+export const EDGE_COLORS = {
+  npc: "rgba(103, 232, 249, 0.85)",
+  player: "rgba(74, 222, 128, 0.9)",
+  offchain: "rgba(251, 146, 60, 0.9)",
+  /** Deployable gate whose owner isn't looked up yet. */
+  deployable: "rgba(212, 212, 216, 0.7)",
+} as const;
+
+export type EdgeKind = keyof typeof EDGE_COLORS;
+
+export function edgeKind(e: PocEdge): EdgeKind {
+  return e.source !== "deployable" ? "npc" : e.gateOwner ?? "deployable";
+}
+
+export function edgeColor(e: PocEdge): string {
+  return EDGE_COLORS[edgeKind(e)];
+}
+
+/** For a single connection. */
+export const EDGE_KIND_SHORT: Record<EdgeKind, string> = {
+  npc: "NPC stargate",
+  player: "player gate",
+  offchain: "catapult / server gate",
+  deployable: "gate, owner unknown",
+};
+
+export const EDGE_KIND_LABELS: Record<EdgeKind, string> = {
+  npc: "NPC stargates",
+  player: "Player gates",
+  offchain: "Catapults / server gates",
+  deployable: "Gates, owner unknown",
+};
+
+/** Which connections the map draws. Shared by the Map tab and the mini-map window (same localStorage). */
+export interface EdgeFilter {
+  kinds: Record<EdgeKind, boolean>;
+  /** Player gates: only those owned by your tribe. */
+  myTribeOnly: boolean;
+}
+
+const EDGE_FILTER_KEY = "powerlay-map-edge-filter";
+const DEFAULT_EDGE_FILTER: EdgeFilter = { kinds: { npc: true, player: true, offchain: true, deployable: true }, myTribeOnly: false };
+
+function loadEdgeFilter(): EdgeFilter {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EDGE_FILTER_KEY) ?? "null") as Partial<EdgeFilter> | null;
+    return { kinds: { ...DEFAULT_EDGE_FILTER.kinds, ...raw?.kinds }, myTribeOnly: !!raw?.myTribeOnly };
+  } catch {
+    return DEFAULT_EDGE_FILTER;
+  }
+}
+
+function useEdgeFilter(): [EdgeFilter, (f: EdgeFilter) => void] {
+  const [filter, setFilter] = useState<EdgeFilter>(loadEdgeFilter);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === EDGE_FILTER_KEY) setFilter(loadEdgeFilter());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+  const update = useCallback((f: EdgeFilter) => {
+    setFilter(f);
+    try {
+      localStorage.setItem(EDGE_FILTER_KEY, JSON.stringify(f));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  return [filter, update];
+}
 
 export interface Pt {
   sys: PocMapSystem;
@@ -58,6 +134,16 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
   const [lastIngested, setLastIngested] = useState<PocSystemLink[]>([]);
   const [logLite, setLogLite] = useState<PocLogLiteStatus | null>(null);
   const [areaNames, setAreaNames] = useState<AreaNames>({ regions: {}, constellations: {} });
+  const [travel, setTravel] = useState<PocTravel | null>(null);
+  const [edgeFilter, setEdgeFilter] = useEdgeFilter();
+  const [myTribeId, setMyTribeId] = useState<number | null>(null);
+
+  useEffect(() => {
+    void window.efOverlay?.auth?.getSession().then((s) => {
+      const t = Number(s?.tribeId);
+      setMyTribeId(Number.isFinite(t) && t > 0 ? t : null);
+    });
+  }, []);
 
   // --- loading ---
   useEffect(() => {
@@ -72,13 +158,15 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
   useEffect(() => {
     let alive = true;
     const tick = async () => {
-      const [list, cur, linkRes, logLiteRes] = await Promise.all([
+      const [list, cur, linkRes, logLiteRes, travelRes] = await Promise.all([
         window.efOverlay?.scout?.list?.(),
         window.efOverlay?.scout?.getActiveSystem?.(),
         window.efOverlay?.pocMap?.getLinks?.(),
         window.efOverlay?.pocMap?.getLogLiteStatus?.(),
+        window.efOverlay?.pocMap?.getTravel?.(),
       ]);
       if (!alive) return;
+      setTravel(travelRes ?? null);
       setLogLite(logLiteRes ?? null);
       if (list) setEntries(list.filter((e) => e.status === "active"));
       setCurrentSystem(cur ?? null);
@@ -159,12 +247,36 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
     [entries, byName],
   );
 
-  /** Confirmed Cycle 7 connections (from in-game Adjacent / Route tabs). */
-  const c7Neighbours = useMemo(() => adjacency(edges.map(({ a, b }) => [a, b] as [number, number])), [edges]);
+  /** Confirmed connections the filter lets through. */
+  const visibleEdges = useMemo(
+    () =>
+      edges.filter((e) => {
+        const kind = edgeKind(e);
+        if (!edgeFilter.kinds[kind]) return false;
+        return !(kind === "player" && edgeFilter.myTribeOnly && (myTribeId == null || e.gateTribeId !== myTribeId));
+      }),
+    [edges, edgeFilter, myTribeId],
+  );
+
+  /** Every confirmed connection per system — a pair can appear more than once (NPC stargate + gates). */
+  const edgesBySystem = useMemo(() => {
+    const m = new Map<number, PocEdge[]>();
+    for (const e of edges) {
+      (m.get(e.a) ?? m.set(e.a, []).get(e.a)!).push(e);
+      (m.get(e.b) ?? m.set(e.b, []).get(e.b)!).push(e);
+    }
+    return m;
+  }, [edges]);
 
   const currentPt =
     (currentSystemId != null ? byId.get(currentSystemId) : undefined) ??
     (currentSystem ? byName.get(currentSystem.toLowerCase()) ?? null : null);
+
+  /** One jump back: the last hop's origin, as long as that hop landed where we are now. */
+  const lastHop = travel?.lastHop ?? null;
+  const previousSystemId =
+    lastHop && (currentPt == null || lastHop.toSystemId === currentPt.sys.id) ? lastHop.fromSystemId : null;
+  const sessionHops = travel?.hops ?? [];
 
   return {
     base,
@@ -188,8 +300,16 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
     layerNeighbours,
     entriesBySystem,
     unmappedEntries,
-    c7Neighbours,
+    edgesBySystem,
+    visibleEdges,
+    edgeFilter,
+    setEdgeFilter,
+    myTribeId,
     currentPt,
+    travel,
+    setTravel,
+    previousSystemId,
+    sessionHops,
   };
 }
 
