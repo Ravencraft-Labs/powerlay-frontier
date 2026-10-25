@@ -1,24 +1,24 @@
 /**
- * Owner of a deployable gate by its in-game item ID, read from the EVE Frontier world package on Sui:
- * gate::Gate (key.item_id) → owner_cap_id → the OwnerCap's owner, a character::Character (name, tribe).
- * Catapults and server-placed gates aren't gate::Gate objects, so they come back "offchain".
+ * Owner of a deployable gate (player gate or catapult) by its in-game item ID, read from the EVE Frontier
+ * world package on Sui. World objects are `derived_object`s of the package's ObjectRegistry keyed by
+ * TenantItemId { item_id, tenant }, so the object ID is computed from the item ID — one request per gate.
+ * Chain: gate::Gate / assembly::Assembly → owner_cap_id → the OwnerCap's owner, a character::Character.
  */
+import { bcs } from "@mysten/sui/bcs";
+import { deriveObjectID } from "@mysten/sui/utils";
 import type { GateOwner } from "@powerlay/core";
 import { FRONTIER_WORLD_PACKAGE_STILLNESS, getEffectiveEfGraphqlUrl, getPlayerTribeFetchTimeoutMs } from "./playerTribeFromChain.js";
 
-interface ChainGate {
-  key?: { item_id?: string };
-  owner_cap_id?: string;
-  type_id?: string;
-  status?: { status?: { "@variant"?: string } };
-}
+/** Cycle 7 world package (catapults, current gates), then the Cycle 6 one. */
+const WORLD_PACKAGES = ["0x7be18d6294e533bedd9a5d70a96ce8d9d4b87a7c74188ba65d3fe966bbed9d92", FRONTIER_WORLD_PACKAGE_STILLNESS];
+const TENANT = "stillness";
+/** Tribe IDs below this are NPC corporations (characters without a player tribe). */
+const FIRST_PLAYER_TRIBE_ID = 98_000_000;
 
-/** Gate list refresh: new gates get anchored during a session. */
-const GATES_TTL_MS = 5 * 60_000;
-const MAX_PAGES = 40;
+const TenantItemId = bcs.struct("TenantItemId", { item_id: bcs.u64(), tenant: bcs.string() });
 
-let gatesCache: { at: number; byItemId: Map<string, ChainGate> } | null = null;
 const ownerCache = new Map<string, GateOwner>();
+const registryByPackage = new Map<string, string | null>();
 
 async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const controller = new AbortController();
@@ -39,60 +39,73 @@ async function gql<T>(query: string, variables: Record<string, unknown>): Promis
   }
 }
 
-const GATES_QUERY = `
-  query Gates($type: String!, $after: String) {
-    objects(first: 50, after: $after, filter: { type: $type }) {
-      pageInfo { hasNextPage endCursor }
-      nodes { asMoveObject { contents { json } } }
-    }
+const REGISTRY_QUERY = `
+  query Registry($type: String!) {
+    objects(first: 1, filter: { type: $type }) { nodes { address } }
   }
 `;
 
-async function loadGates(): Promise<Map<string, ChainGate>> {
-  if (gatesCache && Date.now() - gatesCache.at < GATES_TTL_MS) return gatesCache.byItemId;
-  type Page = {
-    objects: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Array<{ asMoveObject?: { contents?: { json?: ChainGate } } }> };
-  };
-  const byItemId = new Map<string, ChainGate>();
-  let after: string | null = null;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const data: Page = await gql<Page>(GATES_QUERY, { type: `${FRONTIER_WORLD_PACKAGE_STILLNESS}::gate::Gate`, after });
-    for (const n of data.objects.nodes) {
-      const g = n.asMoveObject?.contents?.json;
-      if (g?.key?.item_id) byItemId.set(g.key.item_id, g);
-    }
-    if (!data.objects.pageInfo.hasNextPage) break;
-    after = data.objects.pageInfo.endCursor;
-  }
-  gatesCache = { at: Date.now(), byItemId };
-  return byItemId;
+async function registryOf(pkg: string): Promise<string | null> {
+  if (registryByPackage.has(pkg)) return registryByPackage.get(pkg)!;
+  const data = await gql<{ objects: { nodes: Array<{ address: string }> } }>(REGISTRY_QUERY, { type: `${pkg}::object_registry::ObjectRegistry` });
+  const id = data.objects.nodes[0]?.address ?? null;
+  registryByPackage.set(pkg, id);
+  return id;
 }
 
-const CAP_OWNER_QUERY = `
-  query CapOwner($id: SuiAddress!) {
+const OBJECT_QUERY = `
+  query Obj($id: SuiAddress!) {
     object(address: $id) {
       owner { ... on AddressOwner { address { address } } }
+      asMoveObject { contents { type { repr } json } }
     }
   }
 `;
 
-const CHARACTER_QUERY = `
-  query Character($id: SuiAddress!) {
-    object(address: $id) { asMoveObject { contents { json } } }
-  }
-`;
+interface ChainObject {
+  owner?: { address?: { address?: string } };
+  asMoveObject?: { contents?: { type?: { repr?: string }; json?: Record<string, unknown> } };
+}
 
+async function getObject(id: string): Promise<ChainObject | null> {
+  return (await gql<{ object: ChainObject | null }>(OBJECT_QUERY, { id })).object;
+}
+
+/** World object for an in-game item ID: tries each world package's registry. */
+async function findWorldObject(itemId: string): Promise<ChainObject | null> {
+  const key = TenantItemId.serialize({ item_id: BigInt(itemId), tenant: TENANT }).toBytes();
+  for (const pkg of WORLD_PACKAGES) {
+    const registry = await registryOf(pkg);
+    if (!registry) continue;
+    const obj = await getObject(deriveObjectID(registry, `${pkg}::in_game_id::TenantItemId`, key));
+    if (obj?.asMoveObject) return obj;
+  }
+  return null;
+}
+
+/** OwnerCap → its owner (a Character object) → name and player tribe. */
 async function ownerCharacter(capId: string): Promise<{ name: string | null; tribeId: number | null }> {
-  const cap = await gql<{ object?: { owner?: { address?: { address?: string } } } }>(CAP_OWNER_QUERY, { id: capId });
-  const charId = cap.object?.owner?.address?.address;
-  if (!charId) return { name: null, tribeId: null };
-  const ch = await gql<{ object?: { asMoveObject?: { contents?: { json?: { tribe_id?: number | string; metadata?: { name?: string } } } } } }>(
-    CHARACTER_QUERY,
-    { id: charId },
-  );
-  const json = ch.object?.asMoveObject?.contents?.json;
+  const charId = (await getObject(capId))?.owner?.address?.address;
+  const json = charId ? (await getObject(charId))?.asMoveObject?.contents?.json : undefined;
   const tribe = Number(json?.tribe_id);
-  return { name: json?.metadata?.name?.trim() || null, tribeId: Number.isFinite(tribe) && tribe > 0 ? tribe : null };
+  const meta = json?.metadata as { name?: string } | undefined;
+  return { name: meta?.name?.trim() || null, tribeId: Number.isFinite(tribe) && tribe >= FIRST_PLAYER_TRIBE_ID ? tribe : null };
+}
+
+/** Owner from a world object (gate or assembly) already in hand. */
+export async function ownerOfWorldObject(obj: ChainObject): Promise<GateOwner> {
+  const json = obj.asMoveObject?.contents?.json ?? {};
+  const capId = typeof json.owner_cap_id === "string" ? json.owner_cap_id : null;
+  const character = capId ? await ownerCharacter(capId) : { name: null, tribeId: null };
+  const typeId = Number(json.type_id);
+  const status = json.status as { status?: { "@variant"?: string } } | undefined;
+  return {
+    kind: "player",
+    characterName: character.name,
+    tribeId: character.tribeId,
+    typeId: Number.isFinite(typeId) ? typeId : null,
+    online: status?.status?.["@variant"] === "ONLINE",
+  };
 }
 
 /** Never throws: network trouble comes back as `{ kind: "unknown" }` and isn't cached. */
@@ -101,25 +114,23 @@ export async function lookupGateOwner(gateItemId: number): Promise<GateOwner> {
   const cached = ownerCache.get(key);
   if (cached) return cached;
   try {
-    const gate = (await loadGates()).get(key);
-    let owner: GateOwner;
-    if (!gate) {
-      owner = { kind: "offchain" };
-    } else {
-      const character = gate.owner_cap_id ? await ownerCharacter(gate.owner_cap_id) : { name: null, tribeId: null };
-      const typeId = Number(gate.type_id);
-      owner = {
-        kind: "player",
-        characterName: character.name,
-        tribeId: character.tribeId,
-        typeId: Number.isFinite(typeId) ? typeId : null,
-        online: gate.status?.status?.["@variant"] === "ONLINE",
-      };
-    }
-    // "offchain" isn't cached: the gate list refreshes and may pick up a gate anchored meanwhile.
-    if (owner.kind === "player") ownerCache.set(key, owner);
+    const obj = await findWorldObject(key);
+    const owner: GateOwner = obj ? await ownerOfWorldObject(obj) : { kind: "offchain" };
+    ownerCache.set(key, owner);
     return owner;
   } catch (err) {
     return { kind: "unknown", error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** A gate or catapult picked by its Sui object ID (as copied from its in-game info), with its item ID. */
+export async function lookupGateByObjectId(objectId: string): Promise<{ itemId: number; owner: GateOwner } | null> {
+  const obj = await getObject(objectId);
+  const repr = obj?.asMoveObject?.contents?.type?.repr ?? "";
+  if (!obj || !/::(gate::Gate|assembly::Assembly)$/.test(repr)) return null;
+  const itemId = Number((obj.asMoveObject?.contents?.json?.key as { item_id?: string } | undefined)?.item_id);
+  if (!Number.isFinite(itemId)) return null;
+  const owner = await ownerOfWorldObject(obj);
+  ownerCache.set(String(itemId), owner);
+  return { itemId, owner };
 }

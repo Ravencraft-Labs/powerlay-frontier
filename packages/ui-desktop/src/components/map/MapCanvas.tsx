@@ -181,12 +181,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       group.forEach((e, i) => {
         const off = (i - (group.length - 1) / 2) * 3.5;
         ctx.strokeStyle = edgeColor(e);
+        ctx.setLineDash(e.scouted ? [4, 3] : []); // known from the gate's info, not travelled yet
         ctx.beginPath();
         ctx.moveTo(x1 + nx * off, y1 + ny * off);
         ctx.lineTo(x2 + nx * off, y2 + ny * off);
         ctx.stroke();
       });
     }
+    ctx.setLineDash([]);
 
     // this session's travel path; dashed where there was no gate (ship jump, respawn)
     ctx.strokeStyle = TRAVEL_COLOR;

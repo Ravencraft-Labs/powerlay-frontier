@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ScoutEntry } from "@powerlay/core";
 import { usePlugins } from "../../plugins/PluginsProvider";
 import type { MapEdgeLayer } from "../../plugins/types";
-import type { PocEdge, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
+import type { PocEdge, PocGateScoutResult, PocLogLiteStatus, PocMapBase, PocMapSystem, PocSystemLink, PocTravel } from "../../preload";
 
 /** Game coordinates are metres (~1e19); scale to a comfortable world unit. */
 const WORLD_SCALE = 1e-16;
@@ -19,19 +19,32 @@ export const ENTRY_COLORS: Record<string, string> = {
 /** This session's travel path and the system we came from. */
 export const TRAVEL_COLOR = "#c084fc";
 
-/** Confirmed connections by gate kind: NPC stargates (also Adjacent / Route), player gates, catapults / server gates. */
+/** Confirmed connections by kind: NPC stargates (also Adjacent / Route), player gates, catapults, the rest. */
 export const EDGE_COLORS = {
   npc: "rgba(103, 232, 249, 0.85)",
-  player: "rgba(74, 222, 128, 0.9)",
-  offchain: "rgba(251, 146, 60, 0.9)",
+  gate: "rgba(74, 222, 128, 0.9)",
+  catapult: "rgba(251, 146, 60, 0.9)",
+  /** Deployable gate not found on chain. */
+  offchain: "rgba(248, 113, 113, 0.8)",
   /** Deployable gate whose owner isn't looked up yet. */
   deployable: "rgba(212, 212, 216, 0.7)",
 } as const;
 
 export type EdgeKind = keyof typeof EDGE_COLORS;
 
+/** On-chain type IDs, from the game's types. */
+export const GATE_TYPE_NAMES: Record<number, string> = {
+  88086: "Mini Gate",
+  84955: "Heavy Gate",
+  95627: "Mini Catapult",
+  95677: "Heavy Catapult",
+};
+const CATAPULT_TYPE_IDS = new Set([95627, 95677]);
+
 export function edgeKind(e: PocEdge): EdgeKind {
-  return e.source !== "deployable" ? "npc" : e.gateOwner ?? "deployable";
+  if (e.source !== "deployable") return "npc";
+  if (e.gateOwner === "player") return e.gateTypeId != null && CATAPULT_TYPE_IDS.has(e.gateTypeId) ? "catapult" : "gate";
+  return e.gateOwner ?? "deployable";
 }
 
 export function edgeColor(e: PocEdge): string {
@@ -41,27 +54,29 @@ export function edgeColor(e: PocEdge): string {
 /** For a single connection. */
 export const EDGE_KIND_SHORT: Record<EdgeKind, string> = {
   npc: "NPC stargate",
-  player: "player gate",
-  offchain: "catapult / server gate",
+  gate: "player gate",
+  catapult: "catapult",
+  offchain: "gate not on chain",
   deployable: "gate, owner unknown",
 };
 
 export const EDGE_KIND_LABELS: Record<EdgeKind, string> = {
   npc: "NPC stargates",
-  player: "Player gates",
-  offchain: "Catapults / server gates",
-  deployable: "Gates, owner unknown",
+  gate: "Player gates",
+  catapult: "Catapults",
+  offchain: "Not on chain",
+  deployable: "Owner unknown",
 };
 
 /** Which connections the map draws. Shared by the Map tab and the mini-map window (same localStorage). */
 export interface EdgeFilter {
   kinds: Record<EdgeKind, boolean>;
-  /** Player gates: only those owned by your tribe. */
+  /** Player gates and catapults: only those owned by your tribe. */
   myTribeOnly: boolean;
 }
 
 const EDGE_FILTER_KEY = "powerlay-map-edge-filter";
-const DEFAULT_EDGE_FILTER: EdgeFilter = { kinds: { npc: true, player: true, offchain: true, deployable: true }, myTribeOnly: false };
+const DEFAULT_EDGE_FILTER: EdgeFilter = { kinds: { npc: true, gate: true, catapult: true, offchain: true, deployable: true }, myTribeOnly: false };
 
 function loadEdgeFilter(): EdgeFilter {
   try {
@@ -132,6 +147,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
   const [edges, setEdges] = useState<PocEdge[]>([]);
   const [currentSystemId, setCurrentSystemId] = useState<number | null>(null);
   const [lastIngested, setLastIngested] = useState<PocSystemLink[]>([]);
+  const [lastGateScout, setLastGateScout] = useState<PocGateScoutResult | null>(null);
   const [logLite, setLogLite] = useState<PocLogLiteStatus | null>(null);
   const [areaNames, setAreaNames] = useState<AreaNames>({ regions: {}, constellations: {} });
   const [travel, setTravel] = useState<PocTravel | null>(null);
@@ -173,6 +189,7 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
       if (linkRes) {
         setLinks(linkRes.links);
         setLastIngested(linkRes.lastIngested);
+        setLastGateScout(linkRes.lastGateScout);
         setAreaNames(linkRes.areaNames);
         setEdges(linkRes.edges);
         setCurrentSystemId(linkRes.currentSystemId);
@@ -253,7 +270,8 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
       edges.filter((e) => {
         const kind = edgeKind(e);
         if (!edgeFilter.kinds[kind]) return false;
-        return !(kind === "player" && edgeFilter.myTribeOnly && (myTribeId == null || e.gateTribeId !== myTribeId));
+        const owned = kind === "gate" || kind === "catapult";
+        return !(owned && edgeFilter.myTribeOnly && (myTribeId == null || e.gateTribeId !== myTribeId));
       }),
     [edges, edgeFilter, myTribeId],
   );
@@ -290,6 +308,8 @@ export function useMapData({ watchClipboard }: { watchClipboard: boolean }) {
     edges,
     lastIngested,
     setLastIngested,
+    lastGateScout,
+    setLastGateScout,
     logLite,
     setLogLite,
     areaNames,

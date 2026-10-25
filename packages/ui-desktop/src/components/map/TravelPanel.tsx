@@ -2,7 +2,7 @@
 // for deployable gates, whose gate it was (looked up on chain by the main process).
 import React, { useEffect, useState } from "react";
 import type { GateOwner, TravelHop, TravelVia } from "@powerlay/core";
-import { TRAVEL_COLOR, type MapData, type Pt } from "./useMapData";
+import { GATE_TYPE_NAMES, TRAVEL_COLOR, type MapData, type Pt } from "./useMapData";
 
 const VIA_LABEL: Record<TravelVia, string> = {
   stargate: "NPC stargate",
@@ -11,15 +11,13 @@ const VIA_LABEL: Record<TravelVia, string> = {
   respawn: "Respawn",
 };
 
-/** On-chain gate types (the only deployable gates the chain knows). */
-const GATE_TYPE_NAMES: Record<number, string> = { 88086: "Mini Gate", 84955: "Heavy Gate" };
-
 function ownerText(owner: GateOwner | undefined, myTribeId: number | null): string {
   if (!owner || owner.kind === "unknown") return owner?.error ? `owner lookup failed (${owner.error}), retrying` : "looking up owner…";
-  if (owner.kind === "offchain") return "not on chain: catapult or server gate";
+  if (owner.kind === "offchain") return "not on chain";
   const parts = [owner.typeId != null ? GATE_TYPE_NAMES[owner.typeId] ?? `type ${owner.typeId}` : "gate"];
   if (owner.characterName) parts.push(owner.characterName);
   if (owner.tribeId != null) parts.push(owner.tribeId === myTribeId ? "your tribe" : `tribe ${owner.tribeId}`);
+  else parts.push("no player tribe");
   if (!owner.online) parts.push("offline now");
   return parts.join(" · ");
 }

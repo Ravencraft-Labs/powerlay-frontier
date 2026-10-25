@@ -301,6 +301,7 @@ export interface EFOverlayAPI {
       areaNames: { regions: Record<string, string>; constellations: Record<string, string> };
       edges: PocEdge[];
       currentSystemId: number | null;
+      lastGateScout: PocGateScoutResult | null;
     }>;
     ingestText: (text: string) => Promise<PocSystemLink[]>;
     ingestClipboard: () => Promise<PocSystemLink[]>;
@@ -308,6 +309,8 @@ export interface EFOverlayAPI {
     addRoute: (text?: string) => Promise<PocEdgeResult>;
     getTravel: () => Promise<PocTravel>;
     clearTravel: () => Promise<PocTravel>;
+    /** A gate / catapult from its in-game info (assembly id + destination link); clipboard when no text. */
+    scoutGate: (text?: string) => Promise<PocGateScoutResult>;
   };
   /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
   plugins?: {
@@ -349,11 +352,22 @@ export interface PocEdge {
   b: number;
   source: "adjacent" | "route" | "jump" | "deployable";
   gateId?: number;
-  /** Deployable edges: "player" = on-chain gate, "offchain" = catapult or server gate; unset until looked up. */
+  /** Deployable edges: "player" = found on chain (gate or catapult), "offchain" = not on chain; unset until looked up. */
   gateOwner?: "player" | "offchain";
-  /** Player gates: the owner's tribe. */
+  /** On-chain type: Mini / Heavy Gate, Mini / Heavy Catapult. */
+  gateTypeId?: number;
+  /** Owner's player tribe (unset for characters in an NPC corp). */
   gateTribeId?: number;
+  gateOwnerName?: string;
+  /** Known from the gate's in-game info (scouted), not travelled through yet. */
+  scouted?: boolean;
   at: string;
+}
+
+export interface PocGateScoutResult {
+  found: "gate" | "destination" | "nothing";
+  edge?: PocEdge;
+  error?: string;
 }
 
 /** Travel journal (LogLite): hops of the current game session, plus the very last hop for "previous system". */

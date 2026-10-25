@@ -9,6 +9,7 @@ import {
   EDGE_COLORS,
   EDGE_KIND_LABELS,
   EDGE_KIND_SHORT,
+  GATE_TYPE_NAMES,
   edgeColor,
   edgeKind,
   ENTRY_COLORS,
@@ -37,6 +38,8 @@ export function MapPocSection() {
     edges,
     lastIngested,
     setLastIngested,
+    lastGateScout,
+    setLastGateScout,
     logLite,
     setLogLite,
     areaNames,
@@ -95,8 +98,11 @@ export function MapPocSection() {
   }, [selected, edgesBySystem]);
 
   function edgeTitle(e: PocEdge): string {
-    const parts = [EDGE_KIND_LABELS[edgeKind(e)]];
+    const parts = [e.gateTypeId != null ? GATE_TYPE_NAMES[e.gateTypeId] ?? `type ${e.gateTypeId}` : EDGE_KIND_SHORT[edgeKind(e)]];
+    if (e.gateOwnerName) parts.push(e.gateOwnerName);
     if (e.gateTribeId != null) parts.push(e.gateTribeId === myTribeId ? "your tribe" : `tribe ${e.gateTribeId}`);
+    else if (e.gateOwner === "player") parts.push("no player tribe");
+    if (e.scouted) parts.push("scouted, not travelled");
     if (e.gateId != null) parts.push(`gate ${e.gateId}`);
     return parts.join(" · ");
   }
@@ -174,18 +180,18 @@ export function MapPocSection() {
               <span style={{ color: EDGE_COLORS[k] }}>—</span>
               {EDGE_KIND_LABELS[k]} ({edges.filter((x) => edgeKind(x) === k).length})
             </label>
-            {k === "player" && (
+            {k === "catapult" && (
               <label
                 className={`flex items-center gap-1 ${myTribeId == null ? "opacity-50" : "cursor-pointer"}`}
                 title={myTribeId == null ? "Sign in with your wallet so the app knows your tribe" : undefined}
               >
                 <input
                   type="checkbox"
-                  disabled={myTribeId == null || !edgeFilter.kinds.player}
+                  disabled={myTribeId == null || (!edgeFilter.kinds.gate && !edgeFilter.kinds.catapult)}
                   checked={edgeFilter.myTribeOnly}
                   onChange={(e) => setEdgeFilter({ ...edgeFilter, myTribeOnly: e.target.checked })}
                 />
-                only my tribe
+                gates &amp; catapults of my tribe only
               </label>
             )}
           </React.Fragment>
@@ -255,6 +261,11 @@ export function MapPocSection() {
               onKeyDown={async (e) => {
                 if (e.key !== "Enter") return;
                 const res = await window.efOverlay?.pocMap?.ingestText?.(pasteText);
+                if (/0x[0-9a-f]{64}/i.test(pasteText)) {
+                  const scout = await window.efOverlay?.pocMap?.scoutGate?.(pasteText);
+                  if (scout) setLastGateScout(scout);
+                  setPasteText("");
+                }
                 if (res?.length) {
                   setLastIngested(res);
                   setPasteText("");
@@ -282,6 +293,20 @@ export function MapPocSection() {
               </button>
             </div>
             {edgeResult && <div className="text-text">{edgeResult}</div>}
+            <div className="text-[11px]">
+              Gate or catapult without jumping: in its info window copy the <b>assembly id</b> and the <b>destination system</b>{" "}
+              link (either order). It is added from the current system as a dashed connection.
+            </div>
+            {lastGateScout && lastGateScout.found !== "nothing" && (
+              <div className={lastGateScout.error ? "text-amber-400" : lastGateScout.edge ? "text-green-400" : "text-text"}>
+                {lastGateScout.error ??
+                  (lastGateScout.edge
+                    ? `✓ Scouted: ${lastGateScout.edge.gateTypeId != null ? GATE_TYPE_NAMES[lastGateScout.edge.gateTypeId] ?? "gate" : "gate"} → ${linkById.get(lastGateScout.edge.a === currentSystemId ? lastGateScout.edge.b : lastGateScout.edge.a)?.name ?? "system"}`
+                    : lastGateScout.found === "gate"
+                      ? "Gate recognised — now copy its destination system link"
+                      : "Destination noted — now copy the gate's assembly id")}
+              </div>
+            )}
             <div>
               Confirmed systems: {links.length} · connections: {edges.length}
               {currentSystem && currentSystemId == null ? " · current system ID unknown" : ""}
@@ -317,7 +342,7 @@ export function MapPocSection() {
                         )}
                         {list.map((e, i) => (
                           <span key={i} className="text-[11px]" style={{ color: edgeColor(e) }} title={edgeTitle(e)}>
-                            ● {EDGE_KIND_SHORT[edgeKind(e)]}
+                            {e.scouted ? "○" : "●"} {EDGE_KIND_SHORT[edgeKind(e)]}
                             {e.gateTribeId != null && e.gateTribeId === myTribeId ? " (yours)" : ""}
                           </span>
                         ))}

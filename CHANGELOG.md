@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Map (POC): the previous system and this session's path are drawn on the map and the mini-map.
 - Map (POC): "Read LogLite" stays on after a restart.
 - Map (POC): connections are coloured and filterable by kind (NPC stargates, player gates — optionally only your tribe's — catapults / server gates); several connections between two systems are drawn side by side and listed per neighbour.
+- Map (POC): gate owners are looked up in the Cycle 7 world package too, so catapults (Mini / Heavy Catapult) show their owner and get their own colour and filter.
+- Map (POC): scout a gate or catapult without jumping — copy its assembly id and destination link from its info window; it is added as a dashed connection from the current system.
+- Dev: `pnpm dev` mirrors the game client's LogLite stream to `data/loglite/live/client*.tsv` (rotated, 1 GB max) while "Read LogLite" is on.
 - Overlay bar: an in-game strip to show, hide and lock the Scout, Contracts, Map and build overlays without switching to the app; the eye hides all open overlays and brings them back. Open it from the header ("Overlay bar") or the tray menu; it reopens on the next launch.
 
 ### Changed

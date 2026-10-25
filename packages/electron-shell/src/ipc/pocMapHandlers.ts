@@ -7,7 +7,8 @@
 import { app, clipboard, ipcMain } from "electron";
 import fs from "fs";
 import path from "path";
-import { classifyHop, type LogLiteEvent, type PendingJump, type TravelVia } from "@powerlay/core";
+import { classifyHop, type GateOwner, type LogLiteEvent, type PendingJump, type TravelVia } from "@powerlay/core";
+import { lookupGateByObjectId, lookupGateOwner } from "../blockchain/gateOwners.js";
 import { getDataRoot } from "./gameDataLoader.js";
 import { loadSettings, saveSettings } from "./settingsStore.js";
 import { clearTravelSession, getTravel, onGateOwnerResolved, recordHop, startTravelSession } from "./travelLog.js";
@@ -21,7 +22,9 @@ function pocDataDir(): string {
 }
 
 /** showinfo typeIDs: 3 = region, 4 = constellation, 5 = solar system. */
-const LOCATION_LINK_RE = /<url=showinfo:([345])\/\/(\d+)>([^<]*)<\/url>/g;
+const LOCATION_LINK_RE = /<(?:url=|a href=")showinfo:([345])\/\/(\d+)"?>([^<]*)<\/(?:url|a)>/g;
+/** Sui object IDs, as copied from an assembly's in-game info (assembly id, owner, network node). */
+const OBJECT_ID_RE = /0x[0-9a-f]{64}/gi;
 /** Dragged links carry a kind prefix: `Solar System - DI7|021`; typed ones are just the typed text. */
 const KIND_PREFIX_RE = /^(Solar System|Constellation|Region)\s*-\s*/i;
 
@@ -125,10 +128,15 @@ export interface PocEdge {
   source: "adjacent" | "route" | "jump" | "deployable";
   /** Gate used, when the edge came from a jump. */
   gateId?: number;
-  /** Deployable edges: "player" = on-chain gate, "offchain" = catapult or server gate; unset until looked up. */
+  /** Deployable edges: "player" = found on chain (gate or catapult), "offchain" = not on chain; unset until looked up. */
   gateOwner?: "player" | "offchain";
-  /** Player gates: the owner's tribe. */
+  /** On-chain type: Mini / Heavy Gate, Mini / Heavy Catapult. */
+  gateTypeId?: number;
+  /** Owner's player tribe (unset for characters in an NPC corp). */
   gateTribeId?: number;
+  gateOwnerName?: string;
+  /** Known from the gate's in-game info (scouted), not travelled through yet. */
+  scouted?: boolean;
   at: string;
 }
 
@@ -154,27 +162,109 @@ function loadEdges(): Record<string, PocEdge> {
   }
 }
 
-function saveEdges(pairs: [number, number][], source: PocEdge["source"], gateId?: number): PocEdge[] {
+function saveEdges(pairs: [number, number][], source: PocEdge["source"], gateId?: number, scouted = false): PocEdge[] {
   const edges = loadEdges();
   const added: PocEdge[] = [];
   for (const [x, y] of pairs) {
     if (x === y) continue;
-    const edge: PocEdge = { a: Math.min(x, y), b: Math.max(x, y), source, ...(gateId != null && { gateId }), at: new Date().toISOString() };
+    const edge: PocEdge = {
+      a: Math.min(x, y),
+      b: Math.max(x, y),
+      source,
+      ...(gateId != null && { gateId }),
+      ...(scouted && { scouted }),
+      at: new Date().toISOString(),
+    };
     const key = edgeKey(edge);
     if (!edges[key]) added.push((edges[key] = edge));
+    else if (!scouted) delete edges[key].scouted; // travelled through a gate we had only scouted
   }
   fs.writeFileSync(edgesPath(), JSON.stringify(edges, null, 2), "utf8");
   return added;
 }
 
-function setEdgeGateOwner(x: number, y: number, gateId: number, gateOwner: NonNullable<PocEdge["gateOwner"]>, tribeId: number | null): void {
+function applyGateOwner(e: PocEdge, owner: GateOwner): void {
+  delete e.gateTypeId;
+  delete e.gateTribeId;
+  delete e.gateOwnerName;
+  if (owner.kind === "offchain") e.gateOwner = "offchain";
+  if (owner.kind !== "player") return;
+  e.gateOwner = "player";
+  if (owner.typeId != null) e.gateTypeId = owner.typeId;
+  if (owner.tribeId != null) e.gateTribeId = owner.tribeId;
+  if (owner.characterName) e.gateOwnerName = owner.characterName;
+}
+
+function setEdgeGateOwner(x: number, y: number, gateId: number, owner: GateOwner): void {
+  if (owner.kind === "unknown") return;
   const edges = loadEdges();
   const e = edges[edgeKey({ a: Math.min(x, y), b: Math.max(x, y), source: "deployable", gateId })];
-  if (!e || (e.gateOwner === gateOwner && (e.gateTribeId ?? null) === tribeId)) return;
-  e.gateOwner = gateOwner;
-  if (tribeId != null) e.gateTribeId = tribeId;
-  else delete e.gateTribeId;
+  if (!e) return;
+  applyGateOwner(e, owner);
   fs.writeFileSync(edgesPath(), JSON.stringify(edges, null, 2), "utf8");
+}
+
+/**
+ * Re-check gate edges without a resolved owner, or marked "not on chain" before catapults were looked up
+ * in the Cycle 7 world package.
+ */
+async function refreshGateEdgeOwners(): Promise<void> {
+  const stale = Object.values(loadEdges()).filter(
+    (e) => e.source === "deployable" && e.gateId != null && (e.gateOwner !== "player" || e.gateTypeId == null),
+  );
+  for (const e of stale) setEdgeGateOwner(e.a, e.b, e.gateId!, await lookupGateOwner(e.gateId!));
+}
+
+// --- Scouting a gate / catapult from its in-game info, without jumping ---
+// Its info window has the destination as a system link and the assembly id; they're usually copied one at
+// a time, so whichever comes second completes the pair (within GATE_INFO_WINDOW_MS).
+
+const GATE_INFO_WINDOW_MS = 3 * 60_000;
+let scoutedGate: { itemId: number; owner: GateOwner; at: number } | null = null;
+let scoutedDest: { systemId: number; at: number } | null = null;
+
+export interface PocGateScoutResult {
+  /** What was recognised in this paste. */
+  found: "gate" | "destination" | "nothing";
+  /** Set once gate + destination came together into a connection. */
+  edge?: PocEdge;
+  error?: string;
+}
+
+function completeScoutedGate(): PocEdge | string | undefined {
+  const now = Date.now();
+  if (!scoutedGate || !scoutedDest || now - scoutedGate.at > GATE_INFO_WINDOW_MS || now - scoutedDest.at > GATE_INFO_WINDOW_MS) return undefined;
+  const from = currentSystemId();
+  if (from == null) return "Current system ID unknown — link it from chat first";
+  const { itemId, owner } = scoutedGate;
+  const to = scoutedDest.systemId;
+  scoutedGate = scoutedDest = null;
+  if (from === to) return "The destination is the current system";
+  saveEdges([[from, to]], "deployable", itemId, true);
+  setEdgeGateOwner(from, to, itemId, owner);
+  pushFeed("edge-added", `Scouted gate: ${systemLabel(from)} → ${systemLabel(to)}`);
+  return loadEdges()[edgeKey({ a: Math.min(from, to), b: Math.max(from, to), source: "deployable", gateId: itemId })];
+}
+
+/** Takes a paste with a system link and/or assembly ids; network lookups make it async. */
+async function scoutGateInfo(text: string): Promise<PocGateScoutResult> {
+  let found: PocGateScoutResult["found"] = "nothing";
+  for (const id of new Set(text.match(OBJECT_ID_RE) ?? [])) {
+    const gate = await lookupGateByObjectId(id.toLowerCase()).catch(() => null);
+    if (gate) {
+      scoutedGate = { ...gate, at: Date.now() };
+      found = "gate";
+      break;
+    }
+  }
+  const dest = systemIdsInOrder(text);
+  if (dest.length === 1) {
+    scoutedDest = { systemId: dest[0], at: Date.now() };
+    if (found === "nothing") found = "destination";
+  }
+  if (found === "nothing") return { found };
+  const done = completeScoutedGate();
+  return typeof done === "string" ? { found, error: done } : { found, edge: done };
 }
 
 /** ID of the current system: straight from LogLite while connected, else via the Local log name. */
@@ -339,12 +429,17 @@ function setLogLite(on: boolean): void {
 let clipboardTimer: ReturnType<typeof setInterval> | null = null;
 let lastClipboard = "";
 let lastIngested: PocSystemLink[] = [];
+let lastGateScout: PocGateScoutResult | null = null;
 
 export function registerPocMapHandlers(): void {
   onGateOwnerResolved((hop) => {
-    const o = hop.gateOwner;
-    if (hop.gateId == null || !o || o.kind === "unknown") return;
-    setEdgeGateOwner(hop.fromSystemId, hop.toSystemId, hop.gateId, o.kind, o.kind === "player" ? o.tribeId : null);
+    if (hop.gateId != null && hop.gateOwner) setEdgeGateOwner(hop.fromSystemId, hop.toSystemId, hop.gateId, hop.gateOwner);
+  });
+  void refreshGateEdgeOwners();
+
+  ipcMain.handle("pocMap:scout-gate", async (_event, text?: string) => {
+    lastGateScout = await scoutGateInfo(text ?? (await clipboard.readText()));
+    return lastGateScout;
   });
   if (loadSettings().logLite) setLogLite(true);
 
@@ -370,6 +465,8 @@ export function registerPocMapHandlers(): void {
         lastClipboard = text;
         const changed = ingestClipboard(text);
         if (changed.length > 0) lastIngested = changed;
+        // A copied assembly id starts a gate scout; a system link copied right after (or before) completes it.
+        if (/0x[0-9a-f]{64}/i.test(text) || systemIdsInOrder(text).length === 1) lastGateScout = await scoutGateInfo(text);
       } finally {
         reading = false;
       }
@@ -381,6 +478,7 @@ export function registerPocMapHandlers(): void {
     lastIngested,
     areaNames: loadAreaNames(),
     edges: Object.values(loadEdges()),
+    lastGateScout,
     currentSystemId: currentSystemId(),
   }));
 

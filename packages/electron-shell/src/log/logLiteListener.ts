@@ -3,6 +3,7 @@
 import net from "net";
 import { createLogLiteDecoder, LOGLITE_PORT, parseLogLiteEvent, type LogLiteEvent } from "@powerlay/core";
 import { appLog } from "./appLogger.js";
+import { mirrorLogLiteMessage, mirrorLogLiteNote } from "./logLiteMirror.js";
 
 export type LogLiteState = "off" | "listening" | "connected" | "error";
 
@@ -34,9 +35,11 @@ export function startLogLiteListener(handlers: LogLiteHandlers): void {
     clients.add(socket);
     refreshState();
     handlers.onConnection(true);
+    mirrorLogLiteNote("game client connected");
     const decoder = createLogLiteDecoder();
     socket.on("data", (chunk) => {
       for (const msg of decoder.push(chunk)) {
+        mirrorLogLiteMessage(msg);
         const event = parseLogLiteEvent(msg);
         if (event) handlers.onEvent(event);
       }
@@ -44,6 +47,7 @@ export function startLogLiteListener(handlers: LogLiteHandlers): void {
     socket.on("error", (err) => appLog.warn("logLite: client socket error", { error: String(err) }));
     socket.on("close", () => {
       clients.delete(socket);
+      mirrorLogLiteNote("game client disconnected");
       refreshState();
       handlers.onConnection(false);
     });
