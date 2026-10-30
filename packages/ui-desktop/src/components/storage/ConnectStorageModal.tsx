@@ -20,6 +20,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { ConnectedStorage, StorageHistoryEntry, WalletSsu } from "../../preload";
 import { useAuth } from "../../context/AuthContext";
+import { FRONTIER_WORLDS } from "@powerlay/core";
 import { useContractsAccess } from "../../context/ContractsAccessContext";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,7 @@ import { useContractsAccess } from "../../context/ContractsAccessContext";
 // ---------------------------------------------------------------------------
 
 /** Stillness world package (default; can be overridden in Settings). */
-const DEFAULT_WORLD_PACKAGE_ID = "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const DEFAULT_WORLD_PACKAGE_ID = FRONTIER_WORLDS.stillness.worldPackage;
 
 function shortId(id: string): string {
   if (id.length <= 16) return id;

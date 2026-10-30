@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-type OverlayFrame = "contracts" | "builder" | "scout";
+import type { OverlayShellFrame as OverlayFrame } from "../preload";
 
 function LockClosedIcon({ className }: { className?: string }) {
   return (
@@ -85,5 +85,36 @@ export function OverlayWithLock({ frame, btnCls }: OverlayWithLockProps) {
         </button>
       )}
     </div>
+  );
+}
+
+/** Header button: shows/hides the overlay toolbar (the in-game bar that switches overlays). */
+export function OverlayToolbarToggle() {
+  const [visible, setVisible] = useState(false);
+
+  const load = useCallback(async () => {
+    const v = await window.efOverlay?.overlay?.getVisible?.("toolbar");
+    if (typeof v === "boolean") setVisible(v);
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const id = setInterval(load, 1000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  if (!window.efOverlay?.overlay?.toggle) return null;
+
+  return (
+    <button
+      type="button"
+      className={`px-3 py-1.5 rounded text-sm border transition-colors ${
+        visible ? "text-amber-400 border-amber-400/60 hover:text-amber-300" : "text-muted border-border/60 hover:text-text hover:border-border"
+      }`}
+      onClick={() => void window.efOverlay?.overlay?.toggle("toolbar").then(load)}
+      title="In-game bar to show, hide and lock overlays without switching to this window"
+    >
+      Overlay bar
+    </button>
   );
 }

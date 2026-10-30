@@ -1,4 +1,5 @@
 import type {
+  TravelHop,
   TribeTodo,
   BuildPlan,
   TypesMap,
@@ -16,6 +17,9 @@ import type {
   ScoutSettings,
   ScoutVisibility,
   ScoutActivityEvent,
+  ScoutSiteDef,
+  FacilityRuns,
+  SystemState,
 } from "@powerlay/core";
 
 export interface SignDeliveryTxParams {
@@ -102,6 +106,31 @@ export interface ConnectedStorage {
   characterId?: string;
 }
 
+/**
+ * Sent by a build overlay: mark an ore mined / a crafted item made (done: false undoes the manual mark),
+ * or pick the tracking step to show (null = follow progress again).
+ */
+export type BuilderOverlayAction =
+  | { kind: "ore-done" | "item-done"; typeID: number; done: boolean }
+  | { kind: "item-add"; typeID: number; delta: number }
+  | { kind: "pick-step"; step: number | null }
+  | { kind: "set-auto"; on: boolean }
+  | { kind: "needed-add"; typeID: number; delta: number };
+
+/** What the desktop sends to a build overlay window. */
+export interface BuilderOverlayState {
+  buildName?: string;
+  mined?: number;
+  totalOre?: number;
+  productionLeftSeconds?: number;
+  miningOres?: Array<{ typeID?: number; name: string; minedVol: number; neededVol: number; asteroids?: string[] }>;
+  plannedVolByTypeId?: Record<number, number>;
+  /** Active crafting stage (1-based of `count`) with made/needed units; absent while on mining. */
+  stage?: { index: number; count: number; items: Array<{ typeID?: number; name: string; made: number; needed: number; batch?: number; batchTitle?: string; asteroids?: string[] }> };
+  /** Steps the overlay can switch between: `active` in first..last (0 = mining). */
+  steps?: { active: number; first: number; last: number; auto: boolean };
+}
+
 export interface GameDataErrors {
   types?: string;
   blueprints?: string;
@@ -114,6 +143,8 @@ export interface GameData {
   starSystems: string[];
   /** blueprintTypeID -> comma-separated facility names */
   blueprintToFacilityNames: Record<number, string>;
+  /** blueprintID -> per facility type, max output runs of one job (absent on older shells). */
+  blueprintFacilityRuns?: Record<number, FacilityRuns[]>;
   /** Facility type names from industry_facilities */
   facilityTypeNames: string[];
   /** groupIDs for mineable ores. Empty = no filtering. */
@@ -121,7 +152,8 @@ export interface GameData {
   errors?: GameDataErrors;
 }
 
-export type OverlayShellFrame = "contracts" | "builder" | "scout";
+/** "map" (POC): the mini-map overlay window. */
+export type OverlayShellFrame = "contracts" | "builder" | "scout" | "map" | "toolbar" | "gateloc";
 
 export interface EFOverlayAPI {
   contracts?: {
@@ -175,8 +207,10 @@ export interface EFOverlayAPI {
     hideBuilder?: (buildId: string) => Promise<void>;
     getLockState: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
     toggleLock: (frame: OverlayShellFrame, buildId?: string) => Promise<boolean>;
-    getBuilderState: (buildId: string) => Promise<{ buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>;
-    setBuilderState: (states: Record<string, { buildName?: string; mined?: number; totalOre?: number; productionLeftSeconds?: number; miningOres?: Array<{ name: string; minedVol: number; neededVol: number }>; plannedVolByTypeId?: Record<number, number> }>) => void;
+    getBuilderState: (buildId: string) => Promise<BuilderOverlayState>;
+    setBuilderState: (states: Record<string, BuilderOverlayState>) => void;
+    /** Actions sent from a build overlay (mark ore mined / item made). Returns an unsubscribe. */
+    onBuilderAction?: (cb: (buildId: string, action: BuilderOverlayAction) => void) => () => void;
   };
   gameData: {
     get: () => Promise<GameData>;
@@ -200,6 +234,10 @@ export interface EFOverlayAPI {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
+      miniMapOpacity?: number;
+      /** Main window tab order; the overlay bar follows it. */
+      tabOrder?: string[];
     }>;
     set: (settings: {
       gameLogDir?: string;
@@ -207,6 +245,10 @@ export interface EFOverlayAPI {
       worldContractsPackageId?: string;
       contractsApiBase?: string;
       storageApiBase?: string;
+      overlayOpacity?: number;
+      miniMapOpacity?: number;
+      /** Main window tab order; the overlay bar follows it. */
+      tabOrder?: string[];
     }) => Promise<void>;
   };
   app?: {
@@ -248,12 +290,152 @@ export interface EFOverlayAPI {
     startWatching: () => Promise<void>;
     stopWatching: () => Promise<void>;
     getActivityLog: (limit?: number) => Promise<ScoutActivityEvent[]>;
+    getSites?: () => Promise<ScoutSiteDef[]>;
+    getSystemInfo?: (system: string) => Promise<{ systemId: number | null; state: SystemState | null }>;
+  };
+  /** POC (throwaway): Map tab. */
+  pocMap?: {
+    getBase: () => Promise<PocMapBase | { error: string }>;
+    setLogLite: (on: boolean) => Promise<unknown>;
+    getLogLiteStatus: () => Promise<PocLogLiteStatus>;
+    watchClipboard: (on: boolean) => Promise<void>;
+    getLinks: () => Promise<{
+      links: PocSystemLink[];
+      lastIngested: PocSystemLink[];
+      areaNames: { regions: Record<string, string>; constellations: Record<string, string> };
+      edges: PocEdge[];
+      currentSystemId: number | null;
+      lastGateScout: PocGateScoutResult | null;
+      dormantGates: PocDormantGate[];
+      /** Where deployable gates stand ("P2L4"), by gate item ID. */
+      gateLocations: Record<string, PocGateLocation>;
+    }>;
+    ingestText: (text: string) => Promise<PocSystemLink[]>;
+    ingestClipboard: () => Promise<PocSystemLink[]>;
+    addAdjacent: (anchorId: number | null, text?: string) => Promise<PocEdgeResult>;
+    addRoute: (text?: string) => Promise<PocEdgeResult>;
+    getTravel: () => Promise<PocTravel>;
+    clearTravel: () => Promise<PocTravel>;
+    /** A gate / catapult from its in-game info (assembly id + destination link); clipboard when no text. */
+    scoutGate: (text?: string) => Promise<PocGateScoutResult>;
+    /** Mark a dormant NPC stargate: destination as a name, the depot title or a system link. */
+    addDormant: (fromSystemId: number | null, text?: string, note?: string) => Promise<{ gate?: PocDormantGate; error?: string }>;
+    removeDormant: (id: string) => Promise<void>;
+  };
+  /** Local user plugins (see packages/electron-shell/src/plugins/pluginHost.ts). */
+  plugins?: {
+    list: () => Promise<PluginInfo[]>;
+    dir: () => Promise<string>;
+    setEnabled: (id: string, enabled: boolean) => Promise<PluginInfo[]>;
+    rendererSource: (id: string) => Promise<string | null>;
+    invoke: (id: string, channel: string, ...args: unknown[]) => Promise<unknown>;
   };
   getIconsBaseUrl?: () => Promise<string>;
+}
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string | null;
+  hasRenderer: boolean;
+  enabled: boolean;
+  error?: string;
+}
+
+export interface PocMapSystem {
+  id: number;
+  n: string;
+  x: number;
+  y: number;
+  z: number;
+  c: number;
+  r: number;
+}
+
+export interface PocMapBase {
+  source: string;
+  systems: PocMapSystem[];
+}
+
+export interface PocEdge {
+  a: number;
+  b: number;
+  /** "dormant": NPC stargate marked by hand as needing restoration. */
+  source: "adjacent" | "route" | "jump" | "deployable" | "dormant";
+  gateId?: number;
+  /** Deployable edges: "player" = found on chain (gate or catapult), "offchain" = not on chain; unset until looked up. */
+  gateOwner?: "player" | "offchain";
+  /** On-chain type: Mini / Heavy Gate, Mini / Heavy Catapult. */
+  gateTypeId?: number;
+  /** Owner's player tribe (unset for characters in an NPC corp). */
+  gateTribeId?: number;
+  gateOwnerName?: string;
+  /** Known from the gate's in-game info (scouted), not travelled through yet. */
+  scouted?: boolean;
+  at: string;
+}
+
+export interface PocGateLocation {
+  gateId: number;
+  systemId: number;
+  /** "P2L4", "P3" (at the planet), "Star". */
+  location: string;
+  at: string;
+}
+
+/** NPC stargate that needs restoration (Stargate Depot), marked by hand. */
+export interface PocDormantGate {
+  id: string;
+  fromSystemId: number;
+  toName: string;
+  toSystemId: number | null;
+  note?: string;
+  at: string;
+}
+
+export interface PocGateScoutResult {
+  found: "gate" | "destination" | "nothing";
+  edge?: PocEdge;
+  error?: string;
+}
+
+/** Travel journal (LogLite): hops of the current game session, plus the very last hop for "previous system". */
+export interface PocTravel {
+  sessionStartedAt: string | null;
+  hops: TravelHop[];
+  lastHop: TravelHop | null;
+}
+
+export interface PocEdgeResult {
+  anchorId?: number | null;
+  ingested: PocSystemLink[];
+  added: PocEdge[];
+  error?: string;
+}
+
+export interface PocSystemLink {
+  id: number;
+  name: string | null;
+  linkTexts: string[];
+  source: "current-system" | "link-text" | "prefix-only" | "loglite";
+  at: string;
 }
 
 declare global {
   interface Window {
     efOverlay?: EFOverlayAPI;
   }
+}
+
+export interface PocLogLiteFeedItem {
+  at: string;
+  kind: "connected" | "disconnected" | "system" | "jump" | "hop" | "edge-added" | "edge-known" | "name-bound" | "warp";
+  text: string;
+}
+
+export interface PocLogLiteStatus {
+  state: "off" | "listening" | "connected" | "error";
+  error: string | null;
+  currentSystemId: number | null;
+  feed: PocLogLiteFeedItem[];
 }

@@ -1,8 +1,9 @@
 import React, { useMemo } from "react";
+import { RIFT_ZONES, formatSystemReport } from "@powerlay/core";
 import type { ScoutEntry, RiftZone } from "@powerlay/core";
 import { entryBadgeColor, entryBadgeLabel } from "./scoutZoneColors";
 
-type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure";
+type FilterValue = RiftZone | "all" | "note" | "anomaly" | "resource" | "structure" | "system";
 
 interface Props {
   entries: ScoutEntry[];
@@ -15,8 +16,7 @@ export function ScoutEntryList({ entries, filter, onMarkCleared, onDelete }: Pro
   const filtered = useMemo(() => {
     if (filter === "all") return entries;
     // Zone filter
-    const ZONES = ["RIFT", "INNER", "TROJAN", "FRINGE", "OUTER", "FERAL"];
-    if (ZONES.includes(filter)) return entries.filter((e) => e.zone === filter);
+    if (RIFT_ZONES.includes(filter as RiftZone)) return entries.filter((e) => e.zone === filter);
     // Type filter
     return entries.filter((e) => e.type === filter);
   }, [entries, filter]);
@@ -79,6 +79,7 @@ function ScoutEntryRow({ entry, onMarkCleared, onDelete }: {
           {entry.stability !== undefined && (
             <span className="text-xs text-muted">{entry.stability}% stability</span>
           )}
+          {entry.report && <span className="text-text">{formatSystemReport(entry.report)}</span>}
         </div>
         {entry.notes && <div className="text-xs text-muted mt-0.5 truncate">{entry.notes}</div>}
         <div className="text-xs text-muted/60 mt-0.5 flex flex-wrap gap-x-2">
@@ -89,7 +90,7 @@ function ScoutEntryRow({ entry, onMarkCleared, onDelete }: {
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
-        {!isCleared && (
+        {!isCleared && entry.type !== "system" && (
           <button
             type="button"
             onClick={() => onMarkCleared(entry.id)}

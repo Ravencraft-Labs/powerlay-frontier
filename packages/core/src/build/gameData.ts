@@ -1,33 +1,27 @@
 import type { TypesMap, BlueprintsMap, StrippedType, Blueprint } from "./types.js";
 
-/** Base ore typeIDs used for optimization (Feldspar Crystals, Platinum-Palladium Matrix, Hydrated Sulfide Matrix). */
+/** Common base ore typeIDs preferred by optimization (Crustal Anorthosite Crystals, Massive Ataxite Matrix, Hydrated Gossan Matrix). */
 export const BASE_ORE_TYPE_IDS = new Set([77800, 77810, 77811]);
 
-function sumBaseOreOnly(base: Record<number, number>): number {
+/** True for mineable ore: common base ores, or types flagged isOre by the loader (ore groupIDs). */
+export function isOreType(typeID: number, types: TypesMap): boolean {
+  return BASE_ORE_TYPE_IDS.has(typeID) || types[String(typeID)]?.isOre === true;
+}
+
+function sumBaseOreOnly(base: Record<number, number>, types: TypesMap): number {
   return Object.entries(base)
-    .filter(([typeID]) => BASE_ORE_TYPE_IDS.has(Number(typeID)))
+    .filter(([typeID]) => isOreType(Number(typeID), types))
     .reduce((a, [, qty]) => a + qty, 0);
 }
 
-/** True if name suggests mineable rare ore (veins/matrix). */
-function isRareOreName(name: string): boolean {
-  const n = (name ?? "").toLowerCase();
-  return n.includes("veins") || n.includes("matrix");
-}
-
-/** Tier 1 = common ores only; Tier 2 = common + rare (veins/matrix); Tier 3 = any drop-only or other. */
+/** Tier 1 = common ores only; Tier 2 = any mineable ores; Tier 3 = any drop-only or other. */
 function getBlueprintOreTier(
   base: Record<number, number>,
   types: TypesMap
 ): 1 | 2 | 3 {
   const typeIDs = Object.keys(base).map(Number);
   if (typeIDs.length === 0) return 1;
-  for (const typeID of typeIDs) {
-    if (BASE_ORE_TYPE_IDS.has(typeID)) continue;
-    const name = types[String(typeID)]?.name ?? "";
-    if (isRareOreName(name)) continue;
-    return 3;
-  }
+  if (!typeIDs.every((id) => isOreType(id, types))) return 3;
   const allCommon = typeIDs.every((id) => BASE_ORE_TYPE_IDS.has(id));
   return allCommon ? 1 : 2;
 }
@@ -226,7 +220,8 @@ export function baseMaterialsPerUnitProduct(
     bpForType: Blueprint | undefined
   ): void {
     if (depth > maxDepthVal || quantityPerUnit <= 0) return;
-    const bp = bpForType ?? getBlueprintForProduct(typeID, blueprints);
+    // Ores are mined, even if some blueprint also yields them as a byproduct
+    const bp = bpForType ?? (isOreType(typeID, types) ? undefined : getBlueprintForProduct(typeID, blueprints));
     if (!bp) {
       result[typeID] = (result[typeID] ?? 0) + quantityPerUnit;
       return;
@@ -258,7 +253,7 @@ export function getOptimizedBlueprintForProduct(
     return {
       bp,
       tier: getBlueprintOreTier(base, types),
-      sum: sumBaseOreOnly(base),
+      sum: sumBaseOreOnly(base, types),
     };
   });
   const bestTier = Math.min(...withTierAndSum.map((x) => x.tier)) as 1 | 2 | 3;
@@ -358,7 +353,7 @@ export function getBlueprintOptionsForProduct(
       types,
       options
     );
-    const baseOrePerUnit = sumBaseOreOnly(base);
+    const baseOrePerUnit = sumBaseOreOnly(base, types);
     const tier = getBlueprintOreTier(base, types);
     const fallbackLabel = `Blueprint ${bp.blueprintTypeID}`;
     let chainFull = fallbackLabel;
@@ -615,11 +610,30 @@ export function buildProductionGraph(
   return treeToGraph(trees, types);
 }
 
+/**
+ * Inputs to make `quantity` units in whole runs: runs = ceil(quantity / output per run), inputs =
+ * runs × recipe input. Batch recipes (21 Hydrocarbon Residue -> 75 D1 Fuel) can't run partially, and
+ * scaling per unit would round a small order (1 D1 Fuel = 0.28 Hydrocarbon) down to nothing.
+ */
+function materialsForQuantity(
+  blueprint: Blueprint,
+  productTypeID: number,
+  quantity: number
+): Array<{ typeID: number; quantity: number }> {
+  const mfg = blueprint.activities?.manufacturing;
+  const perRun = mfg?.products?.find((p) => p.typeID === productTypeID)?.quantity ?? 0;
+  if (!mfg?.materials?.length || perRun <= 0 || quantity <= 0) return [];
+  const runs = Math.ceil(quantity / perRun);
+  return mfg.materials.filter((m) => m.quantity > 0).map((m) => ({ typeID: m.typeID, quantity: runs * m.quantity }));
+}
+
 export interface ProductionTreeNode {
   typeID: number;
   name: string;
   quantity: number;
   children: ProductionTreeNode[];
+  /** Blueprint used to make this node; absent for base materials. */
+  blueprintTypeID?: number;
 }
 
 function resolveBlueprintForPath(
@@ -635,6 +649,8 @@ function resolveBlueprintForPath(
     if (bp?.activities?.manufacturing?.products?.some((p) => p.typeID === typeID))
       return bp;
   }
+  // Ores are mined unless the user explicitly picked a recipe above
+  if (isOreType(typeID, types)) return undefined;
   return getOptimizedBlueprintForProduct(typeID, blueprints, types);
 }
 
@@ -651,13 +667,11 @@ function buildTreeRecurse(
 ): ProductionTreeNode {
   const name = types[String(typeID)]?.name ?? String(typeID);
   const children: ProductionTreeNode[] = [];
+  let bp: Blueprint | undefined;
   if (depth < maxDepth && quantity > 0) {
-    const bp = resolveBlueprintForPath(typeID, pathPrefix, overrides, blueprints, types);
+    bp = resolveBlueprintForPath(typeID, pathPrefix, overrides, blueprints, types);
     if (bp) {
-      const perUnit = getMaterialsPerUnitProduct(bp, typeID);
-      for (const { typeID: matTypeID, quantityPerUnit } of perUnit) {
-        const childQty = Math.round(quantityPerUnit * quantity);
-        if (childQty <= 0) continue;
+      for (const { typeID: matTypeID, quantity: childQty } of materialsForQuantity(bp, typeID, quantity)) {
         if (pathTypeIDs.has(matTypeID)) continue;
         const nextPath = new Set(pathTypeIDs);
         nextPath.add(typeID);
@@ -678,7 +692,7 @@ function buildTreeRecurse(
       }
     }
   }
-  return { typeID, name, quantity, children };
+  return { typeID, name, quantity, children, ...(bp && { blueprintTypeID: bp.blueprintTypeID }) };
 }
 
 /** One tree per planned item; each node has typeID, name, quantity, children. Root uses resolved blueprint; overrides apply per path. */
@@ -709,11 +723,8 @@ export function buildProductionTree(
       if (!bp) bp = resolveBlueprint(item, blueprints, types);
       const children: ProductionTreeNode[] = [];
       if (bp && maxDepth > 0 && quantity > 0) {
-        const perUnit = getMaterialsPerUnitProduct(bp, typeID);
         const path = new Set<number>([typeID]);
-        for (const { typeID: matTypeID, quantityPerUnit } of perUnit) {
-          const childQty = Math.round(quantityPerUnit * quantity);
-          if (childQty <= 0) continue;
+        for (const { typeID: matTypeID, quantity: childQty } of materialsForQuantity(bp, typeID, quantity)) {
           const childPathPrefix = `${pathPrefix}/${matTypeID}`;
           children.push(
             buildTreeRecurse(
@@ -730,7 +741,7 @@ export function buildProductionTree(
           );
         }
       }
-      return { typeID, name, quantity, children };
+      return { typeID, name, quantity, children, ...(bp && { blueprintTypeID: bp.blueprintTypeID }) };
     });
 }
 

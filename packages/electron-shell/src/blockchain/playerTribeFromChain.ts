@@ -18,13 +18,14 @@
  *
  * @see docs/contracts-integration.md
  */
+import { FRONTIER_WORLDS, SUI_GRAPHQL_URL, worldOfPackage, worldOfTypeRepr } from "@powerlay/core";
 import { loadSettings } from "../ipc/settingsStore.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_WORLD_API_TIMEOUT_MS = 8_000;
 
 /** Default Sui testnet GraphQL; override with POWERLAY_EF_GRAPHQL_URL. */
-export const DEFAULT_EF_GRAPHQL_URL = "https://graphql.testnet.sui.io/graphql";
+export const DEFAULT_EF_GRAPHQL_URL = SUI_GRAPHQL_URL;
 
 /**
  * Default Frontier World API (Stillness production).
@@ -88,11 +89,9 @@ export interface PlayerTribeResult {
   characterName?: string;
 }
 
-/** World Package object ids — https://docs.evefrontier.com/tools/resources */
-export const FRONTIER_WORLD_PACKAGE_UTOPIA =
-  "0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75";
-export const FRONTIER_WORLD_PACKAGE_STILLNESS =
-  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+/** Current world packages (see FRONTIER_WORLDS in @powerlay/core). */
+export const FRONTIER_WORLD_PACKAGE_UTOPIA = FRONTIER_WORLDS.utopia.worldPackage;
+export const FRONTIER_WORLD_PACKAGE_STILLNESS = FRONTIER_WORLDS.stillness.worldPackage;
 
 const WALLET_OBJECTS_QUERY = `
   query WalletProfileObjects($address: SuiAddress!) {
@@ -281,21 +280,16 @@ function graphqlErrors(json: unknown): boolean {
 }
 
 function packageKindFromPlayerProfileTypeRepr(typeRepr: string): PlayerProfilePackageKind {
-  const lower = typeRepr.toLowerCase();
-  const u = FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase();
-  const s = FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase();
-  if (lower.startsWith(`${u}::`)) return "utopia";
-  if (lower.startsWith(`${s}::`)) return "stillness";
-  return "unknown";
+  return worldOfTypeRepr(typeRepr)?.world.server ?? "unknown";
 }
 
-function collectPlayerProfilesFromWalletJson(json: unknown): { characterId: string; packageKind: PlayerProfilePackageKind }[] {
+function collectPlayerProfilesFromWalletJson(json: unknown): { characterId: string; packageKind: PlayerProfilePackageKind; current: boolean }[] {
   type Node = { contents?: { type?: { repr?: string }; json?: Record<string, unknown> } };
   const nodes = (json as { data?: { address?: { objects?: { nodes?: Node[] } } } })?.data?.address?.objects
     ?.nodes;
   if (!Array.isArray(nodes)) return [];
 
-  const out: { characterId: string; packageKind: PlayerProfilePackageKind }[] = [];
+  const out: { characterId: string; packageKind: PlayerProfilePackageKind; current: boolean }[] = [];
   for (const n of nodes) {
     const repr = n?.contents?.type?.repr ?? "";
     if (!repr.includes("::character::PlayerProfile")) continue;
@@ -304,9 +298,11 @@ function collectPlayerProfilesFromWalletJson(json: unknown): { characterId: stri
     out.push({
       characterId: raw.trim(),
       packageKind: packageKindFromPlayerProfileTypeRepr(repr),
+      current: worldOfTypeRepr(repr)?.current ?? false,
     });
   }
-  return out;
+  // A new cycle gives the wallet a new profile in the new world package: prefer it over older cycles.
+  return out.sort((a, b) => Number(b.current) - Number(a.current));
 }
 
 function pickPlayerProfileForTribe(
@@ -315,9 +311,9 @@ function pickPlayerProfileForTribe(
   if (profiles.length === 0) return null;
   if (profiles.length === 1) return profiles[0];
 
-  const worldPkg = loadSettings().worldContractsPackageId?.trim().toLowerCase() ?? "";
-  const preferStillness = worldPkg === FRONTIER_WORLD_PACKAGE_STILLNESS.toLowerCase();
-  const preferUtopia = worldPkg === FRONTIER_WORLD_PACKAGE_UTOPIA.toLowerCase();
+  const server = worldOfPackage(loadSettings().worldContractsPackageId)?.world.server;
+  const preferStillness = server === "stillness";
+  const preferUtopia = server === "utopia";
 
   if (preferStillness) {
     const s = profiles.find((x) => x.packageKind === "stillness");

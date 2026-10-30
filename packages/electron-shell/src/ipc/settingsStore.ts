@@ -1,9 +1,9 @@
 import { app } from "electron";
 import fs from "fs";
 import path from "path";
+import { currentWorldPackage, FRONTIER_WORLDS } from "@powerlay/core";
 
-const DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS =
-  "0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c";
+const DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS = FRONTIER_WORLDS.stillness.worldPackage;
 const DEFAULT_CONTRACTS_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
 const DEFAULT_STORAGE_API_BASE_STILLNESS = "https://stillness-back.ravencraft.dev/api/v1";
 
@@ -29,6 +29,18 @@ export interface AppSettings {
   contractsApiBase?: string;
   /** Storage backend base URL including `/api/v1`. */
   storageApiBase?: string;
+  /** Overlay background opacity, 0–100. Default 92. */
+  overlayOpacity?: number;
+  /** Mini-map window background opacity, 0–100. Unset = same as `overlayOpacity`. */
+  miniMapOpacity?: number;
+  /** Map: reading the game client's debug log (LogLite stand-in) was on when last used. */
+  logLite?: boolean;
+  /** Main window tab order ("contracts" | "builder" | "scout" | "map"); the overlay bar follows it. */
+  tabOrder?: string[];
+  /** Overlay toolbar was open when last used; it reopens on launch. */
+  overlayToolbar?: boolean;
+  /** Ids of local plugins switched off in Settings. */
+  disabledPlugins?: string[];
 }
 
 const DEFAULT_GAME_LOG_DIR =
@@ -41,6 +53,7 @@ const defaults: AppSettings = {
   worldContractsPackageId: DEFAULT_WORLD_CONTRACTS_PACKAGE_ID_STILLNESS,
   contractsApiBase: DEFAULT_CONTRACTS_API_BASE_STILLNESS,
   storageApiBase: DEFAULT_STORAGE_API_BASE_STILLNESS,
+  overlayOpacity: 92,
 };
 
 export function loadSettings(): AppSettings {
@@ -51,7 +64,10 @@ export function loadSettings(): AppSettings {
     const data = JSON.parse(raw) as Record<string, unknown>;
     delete data.efGraphqlUrl;
     delete data.efWorldApiBaseUrl;
-    return { ...defaults, ...(data as Partial<AppSettings>) };
+    const merged = { ...defaults, ...(data as Partial<AppSettings>) };
+    // A saved world package from an earlier cycle means "that server": use its current package.
+    merged.worldContractsPackageId = currentWorldPackage(merged.worldContractsPackageId);
+    return merged;
   } catch {
     return { ...defaults };
   }

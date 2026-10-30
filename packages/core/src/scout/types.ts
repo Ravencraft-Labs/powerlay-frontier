@@ -1,8 +1,32 @@
-export type ScoutEntryType = "rift" | "anomaly" | "resource" | "structure" | "note";
+export type ScoutEntryType = "rift" | "anomaly" | "resource" | "structure" | "note" | "system";
 
-export type RiftZone = "RIFT" | "INNER" | "TROJAN" | "FRINGE" | "OUTER" | "FERAL";
+export type RiftZone = "RIFT" | "INNER" | "TROJAN" | "FRINGE" | "OUTER" | "FERAL" | "UNKNOWN";
 
 export type ScoutVisibility = "tribe" | "alliance" | "private";
+
+/** What a player reads off a system in game (same fields ef-map collects). All optional. */
+export interface SystemReport {
+  planets?: number;
+  /** e.g. "M6" */
+  spectralClass?: string;
+  /** 1–5 */
+  transientMass?: number;
+  /** 1–6 */
+  infestationIndex?: number;
+}
+
+/** Static system state from systemstate.fsdbinary. */
+export type SystemState = "SETTLED" | "DEVASTATED";
+
+/** One quick-mark site from static data (data/stripped/scout_sites.json). */
+export interface ScoutSiteDef {
+  name: string;
+  zone: RiftZone;
+  /** Internal ecosystem name, e.g. "Broken World - Inner Belt - Derelict Bay". */
+  description?: string;
+  /** Spawn tags, e.g. ["belt", "rocky"]. */
+  tags?: string[];
+}
 
 export interface ScoutEntry {
   id: string;
@@ -13,6 +37,8 @@ export interface ScoutEntry {
   notes?: string;
   /** 0–100, only meaningful for rifts. */
   stability?: number;
+  /** Only for type "system". */
+  report?: SystemReport;
   reporter: string;
   reporterWalletId?: string;
   tribeId?: string;
@@ -32,6 +58,7 @@ export interface CreateScoutEntryInput {
   zone?: RiftZone;
   notes?: string;
   stability?: number;
+  report?: SystemReport;
   reporter: string;
   reporterWalletId?: string;
   tribeId?: string;
@@ -44,6 +71,7 @@ export interface UpdateScoutEntryInput {
   zone?: RiftZone;
   notes?: string;
   stability?: number;
+  report?: SystemReport;
   status?: ScoutEntry["status"];
   expiresAt?: string | null;
   visibility?: ScoutVisibility;

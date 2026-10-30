@@ -10,7 +10,8 @@ const OUTPUT_DIR = path.join(process.cwd(), "data", "stripped");
 function isOreGroup(name) {
   const n = (name || "").trim();
   if (!n) return false;
-  return n.toLowerCase() === "ice" || /\sores?$/i.test(n);
+  // "Regoliths" groups replaced the "* Ores" groups in the Oct 2026 client update.
+  return n.toLowerCase() === "ice" || /\s(ores?|regoliths?)$/i.test(n);
 }
 
 // --- Types ---
@@ -88,9 +89,24 @@ if (fs.existsSync(solarsystemsInputPath)) {
   console.log("solarsystems.json: skipped (file not found)");
 }
 
-// --- Structure recipes (assemblyConstruction from spacecomponentsbytype) ---
+// --- Structure recipes (from spacecomponentsbytype) ---
+// Current clients: smartDeployable.constructionCost on the structure type itself.
+// Pre-Oct-2026 clients: assemblyConstruction { constructedItem, inputItems } on the kit type.
 const spacecomponentsInputPath = path.join(RAW_DIR, "spacecomponentsbytype.json");
 const structureRecipesOutputPath = path.join(OUTPUT_DIR, "structure_recipes.json");
+
+function toInputItems(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const inputItems = {};
+  for (const [typeIdStr, qty] of Object.entries(raw)) {
+    const typeId = parseInt(typeIdStr, 10);
+    const q = Number(qty);
+    if (Number.isFinite(typeId) && Number.isFinite(q) && q > 0) {
+      inputItems[typeIdStr] = q;
+    }
+  }
+  return Object.keys(inputItems).length > 0 ? inputItems : null;
+}
 
 let structureRecipes = {};
 if (fs.existsSync(spacecomponentsInputPath)) {
@@ -98,20 +114,23 @@ if (fs.existsSync(spacecomponentsInputPath)) {
   if (rawSpacecomponents && typeof rawSpacecomponents === "object") {
     for (const key of Object.keys(rawSpacecomponents)) {
       const entry = rawSpacecomponents[key];
+
       const ac = entry?.assemblyConstruction;
-      if (!ac || ac.constructedItem == null || !ac.inputItems || typeof ac.inputItems !== "object") continue;
-      const constructedItem = Number(ac.constructedItem);
-      if (!Number.isFinite(constructedItem)) continue;
-      const inputItems = {};
-      for (const [typeIdStr, qty] of Object.entries(ac.inputItems)) {
-        const typeId = parseInt(typeIdStr, 10);
-        const q = Number(qty);
-        if (Number.isFinite(typeId) && Number.isFinite(q) && q > 0) {
-          inputItems[typeIdStr] = q;
+      if (ac && ac.constructedItem != null) {
+        const constructedItem = Number(ac.constructedItem);
+        const inputItems = toInputItems(ac.inputItems);
+        if (Number.isFinite(constructedItem) && inputItems) {
+          structureRecipes[String(constructedItem)] ??= { constructedItem, inputItems };
         }
       }
-      if (Object.keys(inputItems).length > 0) {
-        structureRecipes[String(constructedItem)] = { constructedItem, inputItems };
+
+      const sd = entry?.smartDeployable;
+      if (sd && sd.constructionCost) {
+        const constructedItem = parseInt(key, 10);
+        const inputItems = toInputItems(sd.constructionCost);
+        if (Number.isFinite(constructedItem) && inputItems) {
+          structureRecipes[String(constructedItem)] = { constructedItem, inputItems };
+        }
       }
     }
   }
@@ -142,3 +161,135 @@ const oreGroupIDsPath = path.join(OUTPUT_DIR, "oreGroupIDs.json");
 fs.writeFileSync(oreGroupIDsPath, JSON.stringify(oreGroupIDs, null, 0), "utf8");
 const oreStat = fs.statSync(oreGroupIDsPath);
 console.log("oreGroupIDs.json: " + oreGroupIDs.length + " ore groups (" + oreStat.size + " bytes)");
+
+// --- Scout sites (ecosystem.json + rift types) ---
+// Ecosystem names carry the zone: "Broken World - Inner Belt - Ossuary Mill (Refinery - Ruins)".
+// Beacon type names are what players see in space, prefixed with the zone: "Inner Derelict Bay".
+const ecosystemInputPath = path.join(RAW_DIR, "ecosystem.json");
+const scoutSitesOutputPath = path.join(OUTPUT_DIR, "scout_sites.json");
+/**
+ * Group "Rift": "Crude - Old/Fine" (the type in a rift's info) and "Crude Matter - Old/Fine/High"
+ * (in space: "Rupture - Old/Fine/High [Rift]"). Players tell rifts apart by Age/Texture/Level, so those are the
+ * catalog names; the description says what the crude refines into (from its refining blueprint).
+ */
+const RIFT_GROUP_ID = 4593;
+const RIFT_NAME_RE = /^(?:Crude Matter|Rupture)\s*-\s*(Young|Old)\/(Fine|Rough)\/(Low|Mid|High)$/i;
+const blueprintsInputPath = path.join(RAW_DIR, "industry_blueprints.json");
+
+/** "Crude - Old/Fine" type ID → names of what one refining run outputs. */
+function crudeRefinesInto() {
+  const out = new Map();
+  if (!fs.existsSync(blueprintsInputPath)) return out;
+  const raw = JSON.parse(fs.readFileSync(blueprintsInputPath, "utf8"));
+  for (const bp of Object.values(raw.blueprints ?? raw)) {
+    const input = bp?.inputs?.length === 1 ? rawTypes[String(bp.inputs[0].typeID)] : null;
+    if (input?.groupID !== RIFT_GROUP_ID || !/^Crude\s*-/.test(input[nameKey] ?? "")) continue;
+    out.set(input[nameKey], (bp.outputs ?? []).map((o) => rawTypes[String(o.typeID)]?.[nameKey]).filter(Boolean));
+  }
+  return out;
+}
+
+function riftSites() {
+  const refines = crudeRefinesInto();
+  const sites = [];
+  for (const t of Object.values(rawTypes)) {
+    if (t?.groupID !== RIFT_GROUP_ID || !t.published) continue;
+    const name = String(t[nameKey] ?? "").trim();
+    const m = RIFT_NAME_RE.exec(name);
+    if (m) {
+      const crude = `Crude - ${m[1]}/${m[2]}`;
+      const into = refines.get(crude);
+      sites.push({
+        name: `${m[1]}/${m[2]}/${m[3]}`,
+        zone: "RIFT",
+        description: `Rupture · ${crude}${into?.length ? ` → ${into.join(", ")}` : ""}`,
+      });
+    } else if (name && !/^Crude\s*-/.test(name)) {
+      sites.push({ name, zone: "RIFT", description: "Rift" }); // e.g. Defiled Crude Matter
+    }
+  }
+  return sites;
+}
+
+function ecosystemZone(name) {
+  if (/\bInner\b/i.test(name)) return "INNER";
+  if (/\bOuter\b/i.test(name)) return "OUTER";
+  if (/\bTrojans?\b/i.test(name)) return "TROJAN";
+  if (/\bTransitional\b/i.test(name)) return "FRINGE";
+  return "UNKNOWN";
+}
+
+if (fs.existsSync(ecosystemInputPath)) {
+  const rawEcosystem = JSON.parse(fs.readFileSync(ecosystemInputPath, "utf8"));
+  const sites = new Map();
+  for (const site of riftSites()) sites.set(site.name, site);
+  for (const eco of Object.values(rawEcosystem)) {
+    if (!eco?.spawnEnabled) continue;
+    const beaconName = rawTypes[String(eco.entryPattern?.beaconTypeID)]?.[nameKey];
+    if (typeof beaconName !== "string" || /placeholder|beacon/i.test(beaconName)) continue;
+    const name = beaconName.replace(/^(Inner|Outer|Trojan|Fringe)\s+/i, "").trim();
+    if (!name || sites.has(name)) continue;
+    sites.set(name, {
+      name,
+      zone: ecosystemZone(eco.name ?? ""),
+      description: (eco.name ?? "").replace(/\s+/g, " ").trim(),
+      ...(Array.isArray(eco.requireAllTags) && eco.requireAllTags.length > 0 && { tags: eco.requireAllTags }),
+    });
+  }
+  const list = [...sites.values()].sort((a, b) => a.zone.localeCompare(b.zone) || a.name.localeCompare(b.name, "en"));
+  fs.writeFileSync(scoutSitesOutputPath, JSON.stringify(list, null, 0), "utf8");
+  console.log("scout_sites.json: " + list.length + " sites");
+} else {
+  console.log("scout_sites.json: skipped (ecosystem.json not found)");
+}
+
+// --- System states (systemstate.json) ---
+// Keyed by solar system ID: Cycle 7 system names come from the server, not the client localization.
+const systemstateInputPath = path.join(RAW_DIR, "systemstate.json");
+const systemStatesOutputPath = path.join(OUTPUT_DIR, "system_states.json");
+
+if (fs.existsSync(systemstateInputPath)) {
+  const rawSystemstate = JSON.parse(fs.readFileSync(systemstateInputPath, "utf8"));
+  const states = {};
+  for (const [id, entry] of Object.entries(rawSystemstate)) {
+    if (typeof entry?.state === "string") states[id] = entry.state;
+  }
+  fs.writeFileSync(systemStatesOutputPath, JSON.stringify(states, null, 0), "utf8");
+  console.log("system_states.json: " + Object.keys(states).length + " systems");
+} else {
+  console.log("system_states.json: skipped (systemstate.json not found)");
+}
+
+// --- Ore hints (where to mine: asteroid kinds from ore descriptions) ---
+// Cycle 7 ore descriptions end with a location paragraph, e.g. "Found frozen deep in the cores of
+// Pitch asteroids, and beneath the crust of Mire and Char asteroids in smaller amounts."
+// Asteroid kinds are its capitalized words; a sentence-initial word counts only when it opens a list
+// ("Bone, Flint and Spall asteroids", "Pitch asteroids also...") rather than the sentence ("Found ...").
+const oreHintsOutputPath = path.join(OUTPUT_DIR, "ore_hints.json");
+const descKey = "description_" + LOCALE;
+const CAPITALIZED_WORD = /\b[A-Z][a-z]+\b/g;
+const OPENS_LIST = /^[A-Z][a-z]+(,|\s+and\b|\s+asteroids?\b)/;
+
+function oreLocationText(description) {
+  const paragraphs = description.split(/\n\s*\n|\s{2,}/).map((p) => p.trim()).filter(Boolean);
+  const last = paragraphs[paragraphs.length - 1] ?? "";
+  return /asteroid/i.test(last) ? last : "";
+}
+
+const oreGroupSet = new Set(oreGroupIDs);
+const oreHints = {};
+for (const [key, t] of Object.entries(rawTypes)) {
+  if (!oreGroupSet.has(t?.groupID) || typeof t?.[descKey] !== "string") continue;
+  const text = oreLocationText(t[descKey].replace(/<[^>]+>/g, ""));
+  if (!text) continue;
+  const asteroids = [];
+  for (const sentence of text.split(/(?<=\.)\s+/)) {
+    for (const m of sentence.matchAll(CAPITALIZED_WORD)) {
+      if (m.index === 0 && !OPENS_LIST.test(sentence)) continue;
+      if (!asteroids.includes(m[0])) asteroids.push(m[0]);
+    }
+  }
+  oreHints[key] = { asteroids, text };
+}
+fs.writeFileSync(oreHintsOutputPath, JSON.stringify(oreHints, null, 0), "utf8");
+console.log("ore_hints.json: " + Object.keys(oreHints).length + " ores" + (Object.keys(oreHints).length ? "" : " (re-extract types for descriptions)"));

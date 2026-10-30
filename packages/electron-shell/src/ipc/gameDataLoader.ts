@@ -1,7 +1,7 @@
 import { app } from "electron";
 import fs from "fs";
 import path from "path";
-import type { TypesMap, BlueprintsMap } from "@powerlay/core";
+import type { TypesMap, BlueprintsMap, FacilityRuns } from "@powerlay/core";
 
 export interface GameDataErrors {
   types?: string;
@@ -15,6 +15,8 @@ export interface GameData {
   starSystems: string[];
   /** blueprintTypeID -> comma-separated facility names (e.g. "Printer S, Portable Printer") */
   blueprintToFacilityNames: Record<number, string>;
+  /** blueprintID -> per facility type, max output runs of one job (for "one job" buttons). */
+  blueprintFacilityRuns: Record<number, FacilityRuns[]>;
   /** Facility type names from industry_facilities (e.g. "Printer S", "Portable Refinery") */
   facilityTypeNames: string[];
   /** groupIDs for mineable ores (from data/stripped/oreGroupIDs.json). Empty = no filtering. */
@@ -32,7 +34,7 @@ interface IndustryBlueprintRaw {
 
 /** Raw entry from data/raw/industry_facilities.json */
 interface IndustryFacilityRaw {
-  blueprints: Array<{ blueprintID: number }>;
+  blueprints: Array<{ blueprintID: number; maxInputRuns?: number; maxOutputRuns?: number }>;
   inputCapacity?: number;
   outputCapacity?: number;
 }
@@ -120,6 +122,23 @@ function buildBlueprintToFacilityNames(
       .map((id) => types[String(id)]?.name ?? String(id))
       .filter(Boolean);
     if (names.length > 0) result[blueprintID] = names.join(", ");
+  }
+  return result;
+}
+
+/** blueprintID -> per facility type, how many runs one job allows (maxOutputRuns). */
+function buildBlueprintFacilityRuns(
+  raw: Record<string, IndustryFacilityRaw>,
+  types: TypesMap
+): Record<number, FacilityRuns[]> {
+  const result: Record<number, FacilityRuns[]> = {};
+  for (const [facilityTypeIdStr, entry] of Object.entries(raw)) {
+    const facility = types[facilityTypeIdStr]?.name;
+    if (!facility || !entry?.blueprints?.length) continue;
+    for (const { blueprintID, maxOutputRuns } of entry.blueprints) {
+      if (typeof maxOutputRuns !== "number" || maxOutputRuns <= 0) continue;
+      (result[blueprintID] ??= []).push({ facility, outputRuns: maxOutputRuns });
+    }
   }
   return result;
 }
@@ -244,6 +263,9 @@ export async function loadGameData(): Promise<GameData> {
   const facilityTypeNames = hasIndustryFacilities
     ? getFacilityTypeNames(industryFacilitiesResult.data, typesResult.data)
     : [];
+  const blueprintFacilityRuns = hasIndustryFacilities
+    ? buildBlueprintFacilityRuns(industryFacilitiesResult.data, typesResult.data)
+    : {};
 
   const oreGroupIDsPath = path.join(root, "data", "stripped", "oreGroupIDs.json");
   let oreGroupIDs: number[] = [];
@@ -260,12 +282,30 @@ export async function loadGameData(): Promise<GameData> {
       }
     }
   }
+  if (oreGroupIDs.length > 0) {
+    const oreGroupSet = new Set(oreGroupIDs);
+    for (const t of Object.values(typesResult.data)) {
+      if (oreGroupSet.has(t.groupID)) t.isOre = true;
+    }
+  }
+
+  // Where to mine each ore (asteroid kinds), from ore descriptions via strip-data. Optional.
+  const oreHintsResult = loadJson<Record<string, { asteroids: string[]; text: string }>>(
+    path.join(root, "data", "stripped", "ore_hints.json")
+  );
+  for (const [typeId, hint] of Object.entries(oreHintsResult.data)) {
+    const t = typesResult.data[typeId];
+    if (!t || !hint) continue;
+    if (hint.asteroids?.length) t.oreAsteroids = hint.asteroids;
+    if (hint.text) t.oreHint = hint.text;
+  }
 
   cached = {
     types: typesResult.data,
     blueprints,
     starSystems,
     blueprintToFacilityNames,
+    blueprintFacilityRuns,
     facilityTypeNames,
     oreGroupIDs,
     errors: Object.keys(errors).length > 0 ? errors : undefined,

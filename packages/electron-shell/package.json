@@ -9,8 +9,9 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@mysten/sui": "^2.12.0",
     "@powerlay/core": "workspace:*",
-    "electron": "^28.0.0"
+    "electron": "44.7.0"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

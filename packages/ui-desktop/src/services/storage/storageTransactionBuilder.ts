@@ -42,6 +42,7 @@
  */
 
 import { Transaction } from "@mysten/sui/transactions";
+import { FRONTIER_WORLDS } from "@powerlay/core";
 
 // ---------------------------------------------------------------------------
 // Constants — fill after deployment
@@ -52,7 +53,7 @@ import { Transaction } from "@mysten/sui/transactions";
  * `powerlay_storage` Move package.
  */
 export const POWERLAY_STORAGE_PACKAGE_ID =
-  "0xb5b0006235c1f27542c6efc1d60778e719f71e254ea3000fca131f8f92f19522";
+  FRONTIER_WORLDS.stillness.powerlayStoragePackage;
 
 /**
  * The Sui network to target when signing transactions.

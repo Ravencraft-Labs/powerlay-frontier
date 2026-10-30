@@ -13,6 +13,7 @@ import {
   timeToRefineOre,
   searchTypesByName,
   getProducibleTypeIds,
+  collectBlueprintParticipantTypeIds,
   getBlueprintOptionsForProduct,
   totalMaterialsFromPlannedItems,
   totalMassFromMaterials,
@@ -26,11 +27,19 @@ import {
   fuelNeededFromAmount,
   timeToMineFromAmount,
   timeToRefineFromAmount,
+  buildProductionStages,
+  plannedItemsStage,
+  jobBatchSize,
+  isStageComplete,
+  oreMiningProgress,
+  activeTrackingStage,
 } from "@powerlay/core";
 import type { GameData } from "../preload";
 import { formatCompactNumber, formatWithThousandsSeparator, formatProductionTime, parseCompactNumber, parseGamePaste } from "../utils/format";
-import { ItemIcon } from "./ItemIcon";
+import { ItemIcon, useIconsBaseUrl } from "./ItemIcon";
 import { HelpLabel } from "./HelpLabel";
+import { BuildStagesTracker } from "./BuildStagesTracker";
+import { effectiveCraftStep, type CraftStep } from "../utils/craftStep";
 
 const DEBOUNCE_MS = 500;
 const TOOLTIP_DELAY_MS = 150;
@@ -107,6 +116,19 @@ interface BuildPageProps {
   computeBaseMaterials?: (plan: BuildPlan) => Array<{ typeID: number; name: string; quantity: number }>;
   overlayVisible?: boolean;
   onToggleOverlay?: () => void;
+  /** buildId -> typeID -> units crafted (entered by hand). */
+  craftedMade?: Record<string, Record<number, number>>;
+  /** buildId -> tracking step picked by the user. */
+  stagePins?: Record<string, number>;
+  onCraftedChange?: (buildId: string, typeID: number, made: number) => void;
+  onStagePin?: (buildId: string, step: number | null) => void;
+  onCraftingReset?: (buildId: string) => void;
+  /** typeID -> the user's own ±N step. */
+  craftSteps?: Record<number, number>;
+  onCraftStepChange?: (typeID: number, size: number | null) => void;
+  /** Move to the next unfinished step when the shown one is done (all builds). */
+  autoAdvance?: boolean;
+  onAutoAdvanceChange?: (on: boolean) => void;
 }
 
 function normalizePlan(p: BuildPlan): BuildPlan {
@@ -121,6 +143,7 @@ function normalizePlan(p: BuildPlan): BuildPlan {
       p.intermediateBlueprintOverrides && typeof p.intermediateBlueprintOverrides === "object"
         ? p.intermediateBlueprintOverrides
         : undefined,
+    freeTracking: p.freeTracking === true ? true : undefined,
     updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
   };
 }
@@ -871,12 +894,13 @@ function MiningTrackingSubFrame({
   inputNumCls,
   btnCls,
   formatCompactNumber,
+  shortenNumbers = true,
   overlayVisible = false,
   onToggleOverlay,
 }: {
   buildId: string;
   baseMaterials: Array<{ typeID: number; name: string; quantity: number }>;
-  types: Record<string, { typeID: number; name?: string; volume?: number }>;
+  types: Record<string, { typeID: number; name?: string; volume?: number; oreAsteroids?: string[]; oreHint?: string }>;
   minedFromLog: Record<number, number>;
   manualMined: Record<number, number>;
   neededOverride: Record<number, number>;
@@ -891,9 +915,11 @@ function MiningTrackingSubFrame({
   inputNumCls: string;
   btnCls: string;
   formatCompactNumber: (n: number) => string;
+  shortenNumbers?: boolean;
   overlayVisible?: boolean;
   onToggleOverlay?: () => void;
 }) {
+  const fmt = (n: number) => shortenNumbers ? formatCompactNumber(n) : formatWithThousandsSeparator(n);
   const [fillAllChecked, setFillAllChecked] = useState(false);
   const [snapshotBeforeFillAll, setSnapshotBeforeFillAll] = useState<Record<number, number> | null>(null);
   const [filledOres, setFilledOres] = useState<Set<number>>(() => new Set());
@@ -1005,8 +1031,9 @@ function MiningTrackingSubFrame({
         next.delete(typeID);
         return next;
       });
+      // Restore what was there before ticking; an ore completed elsewhere (e.g. the overlay) drops its manual value.
       const snap = snapshotPerOre[typeID];
-      if (snap != null && onManualChange) onManualChange(typeID, snap);
+      onManualChange?.(typeID, snap ?? 0);
       setSnapshotPerOre((prev) => {
         const next = { ...prev };
         delete next[typeID];
@@ -1116,9 +1143,11 @@ function MiningTrackingSubFrame({
             const neededVol = getEffectiveNeeded(m.typeID, computedNeeded);
             const minedVol = getEffectiveMined(m.typeID, computedNeeded);
             const progress = neededVol > 0 ? minedVol / neededVol : 0;
-            const isFilled = fillAllChecked || filledOres.has(m.typeID);
+            const isFilled = fillAllChecked || filledOres.has(m.typeID) || (neededVol > 0 && minedVol >= neededVol);
+            const { oreAsteroids, oreHint } = types[String(m.typeID)] ?? {};
             return (
-              <div key={m.typeID} className="flex items-center gap-2 relative">
+              <div key={m.typeID}>
+              <div className="flex items-center gap-2 relative">
                 <label className="flex items-center shrink-0 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1140,7 +1169,7 @@ function MiningTrackingSubFrame({
                   />
                 </div>
                 <span className="text-xs text-muted shrink-0 flex items-center gap-1">
-                  {formatCompactNumber(minedVol)} / {formatCompactNumber(neededVol)} m³
+                  {fmt(minedVol)} / {fmt(neededVol)} m³
                   <button
                     type="button"
                     className="p-0.5 rounded hover:bg-border text-muted hover:text-text transition-colors"
@@ -1166,13 +1195,19 @@ function MiningTrackingSubFrame({
                   />
                 )}
               </div>
+              {oreAsteroids && oreAsteroids.length > 0 && (
+                <div className="pl-12 text-[11px] text-muted/80 truncate" title={oreHint}>
+                  Asteroids: {oreAsteroids.join(", ")}
+                </div>
+              )}
+              </div>
             );
           })}
         </div>
       )}
       {totalOre > 0 ? (
         <p className="text-xs text-muted">
-          {formatCompactNumber(totalMined)} m³ total / {formatCompactNumber(Math.max(0, totalOre - totalMined))} m³ left
+          {fmt(totalMined)} m³ total / {fmt(Math.max(0, totalOre - totalMined))} m³ left
         </p>
       ) : (
         <p className="text-xs text-muted">Add planned items to see ore progress.</p>
@@ -1204,6 +1239,15 @@ export function BuildPage({
   computeBaseMaterials = () => [],
   overlayVisible = false,
   onToggleOverlay,
+  craftedMade = {},
+  stagePins = {},
+  onCraftedChange,
+  onStagePin,
+  onCraftingReset,
+  craftSteps = {},
+  onCraftStepChange,
+  autoAdvance = true,
+  onAutoAdvanceChange,
 }: BuildPageProps) {
   const normalizedPlan = normalizePlan(plan);
   const [local, setLocal] = useState<BuildPlan>(() => normalizedPlan);
@@ -1315,6 +1359,51 @@ export function BuildPage({
     ]
   );
 
+  const isFree = local.freeTracking === true;
+  const productionStages = useMemo(
+    () =>
+      !gameData?.types
+        ? []
+        : isFree
+          ? plannedItemsStage(local.plannedItems, gameData.types)
+          : buildProductionStages(productionTree, gameData.types),
+    [isFree, local.plannedItems, productionTree, gameData?.types]
+  );
+  const batchByType = useMemo(() => {
+    const out: Record<number, CraftStep> = {};
+    if (!gameData?.types || !gameData?.blueprints) return out;
+    const facilityTypes = local.facilities.map((f) => f.type);
+    for (const item of productionStages.flatMap((s) => s.items)) {
+      const def = jobBatchSize(
+        item.typeID,
+        item.blueprintTypeID,
+        gameData.blueprints,
+        gameData.types,
+        gameData.blueprintFacilityRuns ?? {},
+        facilityTypes
+      );
+      const step = effectiveCraftStep(def, craftSteps[item.typeID]);
+      if (step) out[item.typeID] = step;
+    }
+    return out;
+  }, [productionStages, local.facilities, craftSteps, gameData?.types, gameData?.blueprints, gameData?.blueprintFacilityRuns]);
+  const madeForPlan = craftedMade[plan.id] ?? {};
+  const miningForPlan = gameData?.types && !isFree
+    ? oreMiningProgress(
+        computeBaseMaterials(plan),
+        gameData.types,
+        miningMinedFromLog[plan.id] ?? {},
+        miningMinedManual[plan.id] ?? {},
+        miningNeededOverride[plan.id] ?? {}
+      )
+    : { mined: 0, needed: 0 };
+  const stepsCompleted = [
+    miningForPlan.needed <= 0 || miningForPlan.mined >= miningForPlan.needed,
+    ...productionStages.map((s) => isStageComplete(s, madeForPlan)),
+  ];
+  const pinnedStep = stagePins[plan.id];
+  const activeStep = activeTrackingStage(stepsCompleted, pinnedStep);
+
   const productionNetworkGraph = useMemo(
     () =>
       productionTree.length > 0 && gameData?.types
@@ -1347,6 +1436,13 @@ export function BuildPage({
     if (!gameData?.types || !gameData?.blueprints) return undefined;
     return new Set(getProducibleTypeIds(gameData.types, gameData.blueprints).map((t) => t.typeID));
   }, [gameData?.types, gameData?.blueprints]);
+
+  // Free build tracks anything by hand, so its item search also offers recipe inputs: ores, salvage, drops.
+  const industryTypeIds = useMemo(() => {
+    if (!producibleTypeIds || !gameData?.blueprints) return producibleTypeIds;
+    const { materialTypeIds } = collectBlueprintParticipantTypeIds(gameData.blueprints);
+    return new Set([...producibleTypeIds, ...materialTypeIds]);
+  }, [producibleTypeIds, gameData?.blueprints]);
 
   const baseMaterialsList = useMemo(() => {
     if (productionTree.length === 0 || !gameData?.types) return [];
@@ -1438,18 +1534,8 @@ export function BuildPage({
   }, [gameData?.facilityTypeNames, local.facilities]);
 
   const addPlannedItem = () => {
-    if (gameData?.types && gameData?.blueprints) {
-      const producible = getProducibleTypeIds(gameData.types, gameData.blueprints);
-      const first = producible[0];
-      if (first) {
-        update({
-          plannedItems: [...local.plannedItems, { typeID: first.typeID, quantity: 1 }],
-        });
-        return;
-      }
-    }
     update({
-      plannedItems: [...local.plannedItems, { itemId: PRODUCIBLE_ITEMS[0], quantity: 1 }],
+      plannedItems: [...local.plannedItems, { quantity: 1 }],
     });
   };
   const updatePlannedItem = (idx: number, p: PlannedItem) => {
@@ -1522,7 +1608,39 @@ export function BuildPage({
   return (
     <div className="flex flex-col gap-4">
       <div className={sectionCls}>
-        <h3 className={headingCls}>Tracking</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="m-0 text-[0.9rem] font-semibold text-text">Tracking</h3>
+          <div className="flex items-center gap-3">
+            <label
+              className="text-sm text-text flex items-center gap-2 cursor-pointer select-none"
+              title="Track the planned items by hand (e.g. 1000 cans), without mining or recipe steps"
+            >
+              <input
+                type="checkbox"
+                checked={isFree}
+                onChange={(e) => update({ freeTracking: e.target.checked || undefined })}
+                className="rounded border-border"
+              />
+              Free build
+            </label>
+            <label className="text-sm text-text flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={shortenNumbers}
+                onChange={(e) => setShortenNumbers(e.target.checked)}
+                className="rounded border-border"
+              />
+              Shorten numbers
+            </label>
+            <button
+              type="button"
+              className="cursor-pointer px-3 py-1.5 rounded-md border border-destructive/50 bg-destructive/10 text-destructive text-sm hover:bg-destructive/20"
+              onClick={() => onDelete(local.id)}
+            >
+              Delete build
+            </button>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-4 items-end mb-4">
           <div className="flex-1 min-w-[200px]">
             <label className="text-muted text-xs block mb-1">Star system</label>
@@ -1534,6 +1652,7 @@ export function BuildPage({
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {!isFree && (
           <MiningTrackingSubFrame
             buildId={plan.id}
             baseMaterials={computeBaseMaterials(plan)}
@@ -1552,9 +1671,11 @@ export function BuildPage({
             inputNumCls={inputNumCls}
             btnCls={btnCls}
             formatCompactNumber={formatCompactNumber}
+            shortenNumbers={shortenNumbers}
             overlayVisible={overlayVisible}
             onToggleOverlay={onToggleOverlay}
           />
+          )}
           <div className="rounded-md border border-border bg-bg px-4 py-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <h4 className="text-sm font-semibold text-text m-0 flex items-center gap-2">
@@ -1624,6 +1745,28 @@ export function BuildPage({
             </p>
           </div>
         </div>
+        {productionStages.length > 0 && (
+          <div className="mt-4">
+            <BuildStagesTracker
+              stages={productionStages}
+              completed={stepsCompleted}
+              active={activeStep}
+              miningPct={miningForPlan.needed > 0 ? Math.min(100, Math.floor((miningForPlan.mined / miningForPlan.needed) * 100)) : 100}
+              made={madeForPlan}
+              batches={batchByType}
+              onStepChange={onCraftStepChange}
+              autoAdvance={autoAdvance}
+              onAutoAdvanceChange={onAutoAdvanceChange}
+              onMadeChange={(typeID, made) => onCraftedChange?.(plan.id, typeID, made)}
+              onPick={(step) => onStagePin?.(plan.id, step)}
+              onReset={() => onCraftingReset?.(plan.id)}
+              fmt={(n) => (shortenNumbers ? formatCompactNumber(n) : formatWithThousandsSeparator(n))}
+              free={isFree}
+              overlayVisible={overlayVisible}
+              onToggleOverlay={onToggleOverlay}
+            />
+          </div>
+        )}
       </div>
 
       <div className={sectionCls}>
@@ -1696,7 +1839,7 @@ export function BuildPage({
                 <ItemSearchWithTypes
                   types={gameData.types}
                   typeID={p.typeID}
-                  producibleTypeIds={producibleTypeIds}
+                  producibleTypeIds={isFree ? industryTypeIds : producibleTypeIds}
                   onChange={(typeID) =>
                     updatePlannedItem(idx, {
                       ...p,
@@ -1924,30 +2067,6 @@ export function BuildPage({
         ))}
       </div>
 
-      <div className={sectionCls}>
-        <h3 className={headingCls}>Options</h3>
-        <div className={rowCls}>
-          <label className="text-sm text-text flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={shortenNumbers}
-              onChange={(e) => setShortenNumbers(e.target.checked)}
-              className="rounded border-border"
-            />
-            Shorten numbers
-          </label>
-        </div>
-      </div>
-
-      <div className={sectionCls}>
-        <button
-          type="button"
-          className="cursor-pointer px-3 py-1.5 rounded-md border border-destructive/50 bg-destructive/10 text-destructive text-sm hover:bg-destructive/20"
-          onClick={() => onDelete(local.id)}
-        >
-          Delete build
-        </button>
-      </div>
     </div>
   );
 }
@@ -2119,6 +2238,7 @@ function ItemSearchWithTypes({
   types: GameData["types"];
   typeID: number | undefined;
   onChange: (typeID: number) => void;
+  /** Only names with one of these types are offered. */
   producibleTypeIds?: Set<number>;
 }) {
   const name = typeID != null ? types[String(typeID)]?.name ?? String(typeID) : "";
@@ -2130,10 +2250,12 @@ function ItemSearchWithTypes({
   }, [name]);
 
   const matches = useMemo(() => {
-    const all = searchTypesByName(types, query, { volumeMin: 1, preferTypeIds: producibleTypeIds });
+    // No volume cutoff: fuel and refined materials are 0.28 m³, ores 1 m³; the type filter already drops junk.
+    const all = searchTypesByName(types, query, { volumeMin: 0, preferTypeIds: producibleTypeIds });
     return all.slice(0, MAX_ITEM_SEARCH_RESULTS);
   }, [types, query, producibleTypeIds]);
 
+  const iconsBaseUrl = useIconsBaseUrl();
   const hasTypes = Object.keys(types).length > 0;
 
   const pasteFromClipboard = async () => {
@@ -2168,13 +2290,22 @@ function ItemSearchWithTypes({
             matches.map((m) => (
               <li
                 key={m.typeID}
-                className="py-1.5 px-3 cursor-pointer text-sm hover:bg-border"
+                className="py-1.5 px-3 cursor-pointer text-sm hover:bg-border flex items-center gap-2"
                 onMouseDown={() => {
                   onChange(m.typeID);
                   setQuery(m.name);
                   setOpen(false);
                 }}
               >
+                {iconsBaseUrl && (
+                  <img
+                    src={`${iconsBaseUrl.replace(/\/?$/, "/")}${m.typeID}.png`}
+                    alt=""
+                    width={20}
+                    height={20}
+                    className="flex-shrink-0"
+                  />
+                )}
                 {m.name}
               </li>
             ))

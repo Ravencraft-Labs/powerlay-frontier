@@ -8,6 +8,7 @@ export const ZONE_COLORS: Record<RiftZone, string> = {
   FRINGE: "text-orange-400 bg-orange-400/10 border-orange-400/40",
   OUTER:  "text-amber-400  bg-amber-400/10  border-amber-400/40",
   FERAL:  "text-red-400    bg-red-400/10    border-red-400/40",
+  UNKNOWN: "text-slate-400 bg-slate-400/10 border-slate-400/40",
 };
 
 /** Fallback colors for non-rift entry types. */
@@ -16,6 +17,13 @@ export const TYPE_FALLBACK_COLORS: Record<string, string> = {
   resource:  "text-green-400  bg-green-400/10  border-green-400/40",
   structure: "text-orange-400 bg-orange-400/10 border-orange-400/40",
   note:      "text-muted      bg-border/20      border-border/40",
+  system:    "text-teal-400   bg-teal-400/10   border-teal-400/40",
+};
+
+/** Badge classes for the static system state (systemstate.fsdbinary). */
+export const SYSTEM_STATE_COLORS: Record<string, string> = {
+  SETTLED:    "text-emerald-400 bg-emerald-400/10 border-emerald-400/40",
+  DEVASTATED: "text-red-400     bg-red-400/10     border-red-400/40",
 };
 
 export function entryBadgeColor(zone: RiftZone | undefined, type: string): string {

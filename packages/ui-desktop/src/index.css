@@ -95,3 +95,14 @@
   height: 50%;
   background: var(--color-border-input);
 }
+
+/* Mini-map overlay window: draggable header (Electron) */
+.overlay-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.overlay-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

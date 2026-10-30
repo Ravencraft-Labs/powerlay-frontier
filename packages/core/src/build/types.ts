@@ -12,6 +12,12 @@ export interface StrippedType {
   published?: number;
   capacity?: number;
   radius?: number;
+  /** Set by the game data loader for types whose groupID is in oreGroupIDs (mineable ore). */
+  isOre?: boolean;
+  /** Set by the loader from ore_hints.json: asteroid kinds carrying this ore, richest first (e.g. ["Pitch", "Mire"]). */
+  oreAsteroids?: string[];
+  /** Set by the loader from ore_hints.json: the ore description's location sentence(s). */
+  oreHint?: string;
   [key: string]: unknown;
 }
 
@@ -71,6 +77,8 @@ export interface BuildPlan {
   lasers: Laser[];
   /** Path -> blueprintTypeID for intermediate nodes (path e.g. "0/82426", "0/82426/78417"). */
   intermediateBlueprintOverrides?: Record<string, number>;
+  /** Free build: track the planned items by hand as one step (no mining, no recipe steps). */
+  freeTracking?: boolean;
   updatedAt: number;
 }
 
